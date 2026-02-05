@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "io-crosscheck"
+version = "0.1.0"
+description = "PLC-to-IO List Device Verification Engine"
+requires-python = ">=3.10"
+dependencies = [
+    "openpyxl>=3.1.0",
+    "streamlit>=1.30.0",
+    "l5x>=1.0",
+]
+
+[project.scripts]
+io-crosscheck = "io_crosscheck.main:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

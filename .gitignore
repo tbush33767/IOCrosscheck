@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+.env
+*.L5X
+*.l5x
+*.xlsx
+*.xls
+*.csv
+Copy of *.md
