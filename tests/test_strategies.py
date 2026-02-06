@@ -10,7 +10,6 @@ from io_crosscheck.models import (
 from io_crosscheck.strategies import (
     DirectCLXAddressMatch,
     PLC5RackAddressMatch,
-    RackLevelTagExistence,
     ENetModuleTagExtraction,
     TagNameNormalizationMatch,
     MatchingEngine,
@@ -224,86 +223,6 @@ class TestPLC5RackAddressMatch:
                 name="Rack1_Group1_Slot2_IO",
                 base_name="Rack1_Group1_Slot2_IO",
             ),
-        ]
-        result = strategy.match(io_dev, plc_tags)
-        assert result is not None
-
-
-# ===================================================================
-# Strategy 3: Rack-Level TAG Existence
-# ===================================================================
-
-class TestRackLevelTagExistence:
-    """Strategy 3 — verify parent rack TAG exists when no per-point COMMENT."""
-
-    @pytest.fixture
-    def strategy(self):
-        return RackLevelTagExistence()
-
-    def test_rack_exists_point_unconfirmed(self, strategy):
-        """PRD test vector: AS611_AUX @ Rack0:I.Data[6].0, no COMMENT, Rack0:I exists."""
-        io_dev = IODevice(
-            plc_address="Rack0:I.Data[6].0",
-            io_tag="AS611_AUX",
-            device_tag="AS611",
-            address_format=AddressFormat.CLX,
-        )
-        plc_tags = [
-            PLCTag(
-                record_type=RecordType.TAG,
-                name="Rack0:I",
-                base_name="Rack0",
-                datatype="AB:1756_IF8:I:0",
-                category=TagCategory.RACK_IO,
-            ),
-        ]
-        result = strategy.match(io_dev, plc_tags)
-        assert result is not None
-        assert result.classification == Classification.RACK_ONLY
-        assert result.strategy_id == 3
-        assert result.confidence == Confidence.PARTIAL
-
-    def test_rack_does_not_exist(self, strategy):
-        io_dev = IODevice(
-            plc_address="Rack99:I.Data[0].0",
-            address_format=AddressFormat.CLX,
-        )
-        plc_tags = [
-            PLCTag(record_type=RecordType.TAG, name="Rack0:I"),
-        ]
-        result = strategy.match(io_dev, plc_tags)
-        assert result is None
-
-    def test_skips_plc5_format(self, strategy):
-        io_dev = IODevice(
-            plc_address="Rack0_Group0_Slot0_IO.READ[4]",
-            address_format=AddressFormat.PLC5,
-        )
-        plc_tags = [
-            PLCTag(record_type=RecordType.TAG, name="Rack0:I"),
-        ]
-        result = strategy.match(io_dev, plc_tags)
-        assert result is None
-
-    def test_output_rack(self, strategy):
-        io_dev = IODevice(
-            plc_address="Rack11:O.Data[2].5",
-            address_format=AddressFormat.CLX,
-        )
-        plc_tags = [
-            PLCTag(record_type=RecordType.TAG, name="Rack11:O"),
-        ]
-        result = strategy.match(io_dev, plc_tags)
-        assert result is not None
-        assert result.classification == Classification.RACK_ONLY
-
-    def test_case_insensitive_rack_lookup(self, strategy):
-        io_dev = IODevice(
-            plc_address="rack11:i.data[3].13",
-            address_format=AddressFormat.CLX,
-        )
-        plc_tags = [
-            PLCTag(record_type=RecordType.TAG, name="Rack11:I"),
         ]
         result = strategy.match(io_dev, plc_tags)
         assert result is not None

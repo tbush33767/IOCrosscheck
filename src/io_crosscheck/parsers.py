@@ -109,6 +109,14 @@ def parse_io_list_xlsx(filepath: Path, sheet_name: str = "ESCO List") -> list[IO
         if all(c == "" for c in cells):
             continue
 
+        # Skip rows with no meaningful IO data (no device tag, IO tag, or PLC address)
+        def _peek(name: str) -> str:
+            idx = header_map.get(name.lower())
+            return cells[idx] if idx is not None and idx < len(cells) else ""
+
+        if not _peek("device tag") and not _peek("io tag") and not _peek("plc io address"):
+            continue
+
         def col(name: str) -> str:
             name_l = name.lower()
             idx = header_map.get(name_l)

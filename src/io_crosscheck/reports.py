@@ -13,7 +13,6 @@ from io_crosscheck.models import MatchResult, Classification, Confidence
 
 _COLOR_MAP = {
     Classification.BOTH: "92D050",          # green
-    Classification.RACK_ONLY: "FFFF00",       # yellow
     Classification.IO_LIST_ONLY: "FF0000",   # red
     Classification.PLC_ONLY: "5B9BD5",       # blue
     Classification.CONFLICT: "FFC000",       # orange
@@ -182,7 +181,6 @@ _HTML_TEMPLATE = """\
   .card .count {{ font-size: 2em; font-weight: bold; }}
   .card .label {{ color: #666; font-size: 0.9em; }}
   .both {{ color: #27ae60; }}
-  .both-rack {{ color: #f39c12; }}
   .io-only {{ color: #e74c3c; }}
   .plc-only {{ color: #3498db; }}
   .conflict {{ color: #e67e22; }}
@@ -190,7 +188,6 @@ _HTML_TEMPLATE = """\
   table {{ width: 100%; }}
   table.dataTable tbody tr:hover {{ background-color: #eef; }}
   .cls-Both {{ background-color: #d4edda !important; }}
-  .cls-Rack-Only {{ background-color: #fff3cd !important; }}
   .cls-IO-List-Only {{ background-color: #f8d7da !important; }}
   .cls-PLC-Only {{ background-color: #d1ecf1 !important; }}
   .cls-Conflict {{ background-color: #ffeaa7 !important; }}
@@ -203,7 +200,6 @@ _HTML_TEMPLATE = """\
 <div class="summary">
   <div class="card"><div class="count">{total}</div><div class="label">Total</div></div>
   <div class="card"><div class="count both">{both}</div><div class="label">Both</div></div>
-  <div class="card"><div class="count both-rack">{rack_only}</div><div class="label">Rack Only</div></div>
   <div class="card"><div class="count io-only">{io_only}</div><div class="label">IO List Only</div></div>
   <div class="card"><div class="count plc-only">{plc_only}</div><div class="label">PLC Only</div></div>
   <div class="card"><div class="count conflict">{conflicts}</div><div class="label">Conflicts</div></div>
@@ -278,7 +274,6 @@ def generate_html_report(
     html = _HTML_TEMPLATE.format(
         total=summary["total"],
         both=by_cls.get(Classification.BOTH.value, 0),
-        rack_only=by_cls.get(Classification.RACK_ONLY.value, 0),
         io_only=by_cls.get(Classification.IO_LIST_ONLY.value, 0),
         plc_only=by_cls.get(Classification.PLC_ONLY.value, 0),
         conflicts=summary["conflicts"],

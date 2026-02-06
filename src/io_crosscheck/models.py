@@ -31,7 +31,6 @@ class AddressFormat(Enum):
 
 class Classification(Enum):
     BOTH = "Both"
-    RACK_ONLY = "Rack Only"
     IO_LIST_ONLY = "IO List Only"
     PLC_ONLY = "PLC Only"
     CONFLICT = "Conflict"

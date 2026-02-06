@@ -14,7 +14,6 @@ from io_crosscheck.classifiers import classify_tag, is_spare
 from io_crosscheck.strategies import MatchingEngine
 from io_crosscheck.reports import generate_xlsx_report, generate_html_report
 from io_crosscheck.models import Classification, MatchResult
-from io_crosscheck.normalizers import extract_rack_base
 from io_crosscheck.l5x_extractor import extract_l5x
 from io_crosscheck.l5x_report import generate_l5x_markdown
 from io_crosscheck.l5x_to_crosscheck import extract_l5x_enrichment, enrich_results
@@ -66,16 +65,6 @@ st.markdown("""
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _rack_address(r: MatchResult) -> str:
-    """Extract rack base address for Rack Only results (e.g. 'Rack0:I')."""
-    if r.classification != Classification.RACK_ONLY:
-        return ""
-    if r.io_device and r.io_device.plc_address:
-        base = extract_rack_base(r.io_device.plc_address)
-        return base if base else ""
-    return ""
-
-
 def results_to_dataframe(results: list[MatchResult]) -> pd.DataFrame:
     """Convert MatchResult list to a pandas DataFrame for display."""
     rows = []
@@ -94,7 +83,6 @@ def results_to_dataframe(results: list[MatchResult]) -> pd.DataFrame:
             "Classification": r.classification.value,
             "Strategy": r.strategy_id if r.strategy_id else "",
             "Confidence": r.confidence.value if r.strategy_id else "",
-            "Rack Address": _rack_address(r),
             "PLC Tag": plc.name if plc else "",
             "PLC Description": plc.description if plc else "",
             "Conflict": "YES" if r.conflict_flag else "",
@@ -108,7 +96,6 @@ def color_classification(val: str) -> str:
     """Return CSS styling for classification column."""
     colors = {
         "Both": "background-color: #dcfce7; color: #166534",
-        "Rack Only": "background-color: #fef9c3; color: #854d0e",
         "IO List Only": "background-color: #fee2e2; color: #991b1b",
         "PLC Only": "background-color: #dbeafe; color: #1e40af",
         "Conflict": "background-color: #ffedd5; color: #9a3412",
@@ -191,19 +178,17 @@ with tab_crosscheck:
 
         st.markdown("##### Matching Strategies (Priority Order)")
         strategies_data = {
-            "#": [1, 2, 3, 4, 5],
+            "#": [1, 2, 4, 5],
             "Strategy": [
                 "Direct CLX Address Match",
                 "PLC5 Rack Address Match",
-                "Rack-Level TAG Existence",
                 "ENet Module Tag Extraction",
                 "Tag Name Normalization",
             ],
-            "Confidence": ["Exact", "Exact", "Partial", "Exact", "High"],
+            "Confidence": ["Exact", "Exact", "Exact", "High"],
             "Description": [
                 "IO List PLC address vs PLC COMMENT specifiers (case-insensitive)",
                 "PLC5-format addresses vs PLC TAG names",
-                "Verify parent rack TAG exists when no per-point COMMENT",
                 "Extract device IDs from E300_/VFD_/IPDev_ prefixed tags",
                 "Suffix-stripped, case-folded exact name matching",
             ],
@@ -292,11 +277,10 @@ with tab_crosscheck:
 
         # Summary metrics
         st.markdown("### Summary")
-        cols = st.columns(7)
+        cols = st.columns(6)
         metrics = [
             ("Total", len(results), None),
             ("Both", cls_counts.get("Both", 0), "normal"),
-            ("Rack Only", cls_counts.get("Rack Only", 0), None),
             ("IO List Only", cls_counts.get("IO List Only", 0), "inverse"),
             ("PLC Only", cls_counts.get("PLC Only", 0), None),
             ("Conflicts", conflict_count, "inverse" if conflict_count > 0 else None),
@@ -374,6 +358,11 @@ with tab_crosscheck:
 
         # Display table with colored classification
         display_df = filtered_df.drop(columns=["Audit Trail"])
+
+        # Drop columns that are entirely empty in the current filtered view
+        empty_cols = [c for c in display_df.columns if display_df[c].astype(str).isin(["", "nan", "None"]).all()]
+        if empty_cols:
+            display_df = display_df.drop(columns=empty_cols)
 
         st.dataframe(
             display_df.style.map(

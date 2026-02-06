@@ -122,42 +122,6 @@ class PLC5RackAddressMatch(BaseStrategy):
         return None
 
 
-class RackLevelTagExistence(BaseStrategy):
-    """Strategy 3: Rack-Level TAG Existence check."""
-    strategy_id = 3
-    name = "Rack-Level TAG Existence"
-
-    def match(self, io_device: IODevice, plc_tags: list[PLCTag]) -> MatchResult | None:
-        if io_device.address_format != AddressFormat.CLX:
-            return None
-        if not io_device.plc_address:
-            return None
-
-        rack_base = extract_rack_base(io_device.plc_address)
-        if not rack_base:
-            return None
-
-        rack_base_lower = rack_base.lower()
-
-        for tag in plc_tags:
-            if tag.record_type != RecordType.TAG:
-                continue
-            if tag.name.strip().lower() == rack_base_lower:
-                return MatchResult(
-                    io_device=io_device,
-                    plc_tag=tag,
-                    strategy_id=self.strategy_id,
-                    confidence=Confidence.PARTIAL,
-                    classification=Classification.RACK_ONLY,
-                    audit_trail=[
-                        f"Strategy 3: Rack-Level TAG Existence",
-                        f"Rack base '{rack_base}' from IO address '{io_device.plc_address}' exists as PLC TAG '{tag.name}'",
-                        f"Individual point not confirmed — rack-level match only",
-                    ],
-                )
-        return None
-
-
 class ENetModuleTagExtraction(BaseStrategy):
     """Strategy 4: EtherNet/IP Module Tag Extraction."""
     strategy_id = 4
@@ -249,7 +213,6 @@ class MatchingEngine:
         self.strategies: list[BaseStrategy] = [
             DirectCLXAddressMatch(),
             PLC5RackAddressMatch(),
-            RackLevelTagExistence(),
             ENetModuleTagExtraction(),
             TagNameNormalizationMatch(),
         ]

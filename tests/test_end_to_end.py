@@ -151,9 +151,8 @@ class TestEndToEnd:
         assert by_tag["TSV22_EV"].classification == Classification.BOTH
         assert by_tag["TSV22_EV"].strategy_id == 2
 
-        # Strategy 3: rack-only
-        assert by_tag["AS611_AUX"].classification == Classification.RACK_ONLY
-        assert by_tag["AS611_AUX"].strategy_id == 3
+        # No comment match — falls through to IO List Only
+        assert by_tag["AS611_AUX"].classification == Classification.IO_LIST_ONLY
 
         # Strategy 4: ENet
         assert by_tag["P621"].classification == Classification.BOTH

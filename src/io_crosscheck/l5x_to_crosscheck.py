@@ -18,8 +18,6 @@ from io_crosscheck.models import (
     MatchResult,
     PLCTag,
     RecordType,
-    Classification,
-    Confidence,
 )
 from io_crosscheck.normalizers import (
     normalize_address,
@@ -139,10 +137,6 @@ def enrich_results(
     """Enrich crosscheck results with L5X source confirmation.
 
     Key behaviours:
-      - **Rack-Only upgrade:** When a result is ``Both (Rack Only)`` and the
-        L5X contains an alias whose address matches the IO device's PLC
-        address, the result is upgraded to ``Both`` with ``Exact`` confidence
-        and the PLCTag is replaced with the actual alias tag name.
       - **Source confirmation:** Adds ``'L5X'`` to ``result.sources`` when
         the L5X independently confirms the match.
       - **Description fill:** Supplies a description from L5X when the CSV
@@ -155,35 +149,6 @@ def enrich_results(
 
     for result in results:
         l5x_confirmations: list[str] = []
-
-        # --- Rack-Only upgrade via IO device address → L5X alias ----------
-        if (
-            result.io_device
-            and result.io_device.plc_address
-            and result.classification == Classification.RACK_ONLY
-        ):
-            addr_key = normalize_address(result.io_device.plc_address)
-            if addr_key in alias_by_address:
-                aliases = alias_by_address[addr_key]
-                best = aliases[0]  # first match
-                desc = best.get("description", "")
-
-                # Replace the rack-level PLCTag with the actual alias tag
-                result.plc_tag = PLCTag(
-                    record_type=RecordType.COMMENT,
-                    name=best["name"],
-                    base_name=strip_suffixes(best["name"]),
-                    description=desc,
-                    specifier=best["alias_for"],
-                    scope="controller",
-                )
-                result.classification = Classification.BOTH
-                result.confidence = Confidence.EXACT
-                result.strategy_id = 1  # effectively a direct address match
-                l5x_confirmations.append(
-                    f"L5X alias '{best['name']}' → '{best['alias_for']}' "
-                    f"upgraded Rack Only → Both (Exact)"
-                )
 
         # --- Check PLC tag side ---
         if result.plc_tag:
@@ -227,17 +192,13 @@ def enrich_results(
                     )
 
                 # Also check alias_by_address for the device's PLC address
-                # (skip if we already did the rack-only upgrade above)
-                if result.classification != Classification.BOTH or not any(
-                    "upgraded Rack Only" in c for c in l5x_confirmations
-                ):
-                    addr_key = normalize_address(dev.plc_address)
-                    if addr_key in alias_by_address:
-                        aliases = alias_by_address[addr_key]
-                        alias_names = [a["name"] for a in aliases]
-                        l5x_confirmations.append(
-                            f"L5X alias(es) {alias_names} reference device address '{dev.plc_address}'"
-                        )
+                addr_key = normalize_address(dev.plc_address)
+                if addr_key in alias_by_address:
+                    aliases = alias_by_address[addr_key]
+                    alias_names = [a["name"] for a in aliases]
+                    l5x_confirmations.append(
+                        f"L5X alias(es) {alias_names} reference device address '{dev.plc_address}'"
+                    )
 
             # Check if device tag name matches a module name
             if dev.device_tag and dev.device_tag.lower() in module_names:

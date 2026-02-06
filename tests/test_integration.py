@@ -133,8 +133,8 @@ class TestPRDTestVectors:
         assert len(matched) == 1
         assert matched[0].classification == Classification.SPARE
 
-    def test_rack_only_match(self, engine, chrl_plc_tags):
-        """IO: AS611_AUX @ Rack0:I.Data[6].0, no COMMENT, Rack0:I exists → Both (Rack Only)."""
+    def test_no_comment_falls_through(self, engine, chrl_plc_tags):
+        """IO: AS611_AUX @ Rack0:I.Data[6].0, no COMMENT → IO List Only (no strategy match)."""
         io_devices = [
             IODevice(
                 panel="X1", rack="0", slot="6", channel="0",
@@ -146,8 +146,7 @@ class TestPRDTestVectors:
         results = engine.run(io_devices, chrl_plc_tags)
         matched = [r for r in results if r.io_device and r.io_device.io_tag == "AS611_AUX"]
         assert len(matched) == 1
-        assert matched[0].classification == Classification.RACK_ONLY
-        assert matched[0].strategy_id == 3
+        assert matched[0].classification == Classification.IO_LIST_ONLY
 
     def test_substring_safety(self, engine, chrl_plc_tags):
         """IO: LT611 should NOT match PLC program tag LT6110_Monitor → No match."""
