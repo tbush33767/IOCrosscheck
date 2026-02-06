@@ -17,6 +17,25 @@ python -m io_crosscheck path/to/tags.csv path/to/io_list.xlsx
 io-crosscheck path/to/tags.csv path/to/io_list.xlsx
 ```
 
+## GUI (Streamlit)
+
+```bash
+# Install
+pip install -e .
+
+# Start the GUI server
+streamlit run src/io_crosscheck/app.py
+```
+
+Then open the URL that Streamlit prints (typically `http://localhost:8501`).
+
+To disable Streamlit's first-run prompt/telemetry, create `.streamlit/config.toml`:
+
+```toml
+[browser]
+gatherUsageStats = false
+```
+
 ## Usage
 
 ```
@@ -87,6 +106,7 @@ src/io_crosscheck/
 ├── parsers.py       # CSV tag export + XLSX IO List parsers
 ├── strategies.py    # 5 matching strategies + MatchingEngine
 ├── reports.py       # XLSX and HTML report generation
+├── app.py           # Streamlit GUI entry point
 ├── main.py          # CLI entry point
 └── __main__.py      # python -m support
 ```
