@@ -36,27 +36,113 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+    /* Top padding — enough room for tab headers */
     .block-container { padding-top: 2.5rem; }
+
+    /* File uploader dropzone — rounded corners */
+    [data-testid="stFileUploaderDropzone"] {
+        border-radius: 12px !important;
+    }
+
+    /* Theme toggle — style the sidebar icon button */
+    section[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"]:first-of-type {
+        background: none !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 4px 8px !important;
+        min-height: 0 !important;
+    }
+    section[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"]:first-of-type:hover {
+        background: rgba(128,128,128,0.15) !important;
+        border-radius: 8px !important;
+    }
+    section[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"]:first-of-type span[data-testid="stIconMaterial"] {
+        color: #1e293b !important;
+        font-size: 26px !important;
+    }
+
+    /* Metric cards — base styling */
     div[data-testid="stMetric"] {
-        border-radius: 8px;
-        padding: 12px 16px;
-        border: 1px solid rgba(128, 128, 128, 0.3);
+        border-radius: 12px;
+        padding: 14px 18px;
+        border: 1px solid #cbd5e1;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+        transition: box-shadow 0.2s;
     }
-    div[data-testid="stMetric"] label {
-        color: inherit !important;
+    div[data-testid="stMetric"]:hover {
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
     }
-    div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-        color: inherit !important;
+    div[data-testid="stMetric"] label { color: inherit !important; }
+    div[data-testid="stMetric"] div[data-testid="stMetricValue"] { color: inherit !important; }
+    div[data-testid="stMetric"] div[data-testid="stMetricDelta"] { color: inherit !important; }
+
+    /* Color-coded metric cards (applied via nth-child on the 6-column layout) */
+    .metric-total div[data-testid="stMetric"] { background: linear-gradient(135deg, #f8fafc, #e2e8f0); border-left: 4px solid #475569; }
+    .metric-both div[data-testid="stMetric"] { background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-left: 4px solid #22c55e; }
+    .metric-io-only div[data-testid="stMetric"] { background: linear-gradient(135deg, #fef2f2, #fee2e2); border-left: 4px solid #ef4444; }
+    .metric-plc-only div[data-testid="stMetric"] { background: linear-gradient(135deg, #eff6ff, #dbeafe); border-left: 4px solid #3b82f6; }
+    .metric-conflict div[data-testid="stMetric"] { background: linear-gradient(135deg, #fffbeb, #fef3c7); border-left: 4px solid #f59e0b; }
+    .metric-spare div[data-testid="stMetric"] { background: linear-gradient(135deg, #f9fafb, #f3f4f6); border-left: 4px solid #9ca3af; }
+
+    /* Classification badge pills */
+    .cls-both { background-color: #dcfce7; color: #166534; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }
+    .cls-both-rack { background-color: #fef9c3; color: #854d0e; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }
+    .cls-io-only { background-color: #fee2e2; color: #991b1b; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }
+    .cls-plc-only { background-color: #dbeafe; color: #1e40af; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }
+    .cls-conflict { background-color: #ffedd5; color: #9a3412; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }
+    .cls-spare { background-color: #f3f4f6; color: #4b5563; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }
+
+    /* Alternating row stripes on dataframes */
+    div[data-testid="stDataFrame"] table tbody tr:nth-child(even) {
+        background-color: rgba(68, 114, 196, 0.04);
     }
-    div[data-testid="stMetric"] div[data-testid="stMetricDelta"] {
-        color: inherit !important;
+
+    /* Custom HTML results table */
+    .cx-table-wrap { border: 1px solid #cbd5e1; border-radius: 12px; overflow: auto; }
+    .cx-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+    .cx-table th { position: sticky; top: 0; background: #f1f5f9; text-align: left; padding: 8px 10px; border-bottom: 2px solid #cbd5e1; white-space: nowrap; z-index: 1; }
+    .cx-table td { padding: 6px 10px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+    .cx-table tr:nth-child(even) { background: rgba(68, 114, 196, 0.04); }
+    .cx-table tr:hover { background: rgba(68, 114, 196, 0.08); }
+
+    /* Getting-started card — matches file uploader dropzone */
+    .getting-started {
+        background: #FAFBFC;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        padding: 2rem 2.5rem;
+        margin: 1rem 0 1.5rem 0;
     }
-    .cls-both { background-color: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 10px; font-weight: 600; font-size: 0.85em; }
-    .cls-both-rack { background-color: #fef9c3; color: #854d0e; padding: 2px 8px; border-radius: 10px; font-weight: 600; font-size: 0.85em; }
-    .cls-io-only { background-color: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 10px; font-weight: 600; font-size: 0.85em; }
-    .cls-plc-only { background-color: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 10px; font-weight: 600; font-size: 0.85em; }
-    .cls-conflict { background-color: #ffedd5; color: #9a3412; padding: 2px 8px; border-radius: 10px; font-weight: 600; font-size: 0.85em; }
-    .cls-spare { background-color: #f3f4f6; color: #4b5563; padding: 2px 8px; border-radius: 10px; font-weight: 600; font-size: 0.85em; }
+    .getting-started h4 { margin-top: 0; color: #1e40af; }
+    .gs-subtitle { margin-bottom: 0.5rem; font-weight: 600; color: #334155; }
+    .gs-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+    .gs-table th { text-align: left; padding: 6px 8px; border-bottom: 2px solid #cbd5e1; }
+    .gs-table td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+    .gs-table tr:nth-child(even) { background: rgba(68,114,196,0.04); }
+
+    /* Classification legend in sidebar */
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+        font-size: 0.88em;
+    }
+    .legend-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        flex-shrink: 0;
+    }
+
+    /* Consistent section spacing */
+    .stDivider { margin-top: 0.5rem !important; margin-bottom: 0.5rem !important; }
+
+    /* Expander styling */
+    details[data-testid="stExpander"] summary {
+        font-weight: 500;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -94,14 +180,55 @@ def results_to_dataframe(results: list[MatchResult]) -> pd.DataFrame:
 
 def color_classification(val: str) -> str:
     """Return CSS styling for classification column."""
-    colors = {
-        "Both": "background-color: #dcfce7; color: #166534",
-        "IO List Only": "background-color: #fee2e2; color: #991b1b",
-        "PLC Only": "background-color: #dbeafe; color: #1e40af",
-        "Conflict": "background-color: #ffedd5; color: #9a3412",
-        "Spare": "background-color: #f3f4f6; color: #4b5563",
-    }
+    is_dark = st.session_state.get("dark_mode", False)
+    if is_dark:
+        colors = {
+            "Both": "background-color: #166534; color: #bbf7d0",
+            "IO List Only": "background-color: #991b1b; color: #fecaca",
+            "PLC Only": "background-color: #1e40af; color: #bfdbfe",
+            "Conflict": "background-color: #92400e; color: #fed7aa",
+            "Spare": "background-color: #374151; color: #d1d5db",
+        }
+    else:
+        colors = {
+            "Both": "background-color: #dcfce7; color: #166534",
+            "IO List Only": "background-color: #fee2e2; color: #991b1b",
+            "PLC Only": "background-color: #dbeafe; color: #1e40af",
+            "Conflict": "background-color: #ffedd5; color: #9a3412",
+            "Spare": "background-color: #f3f4f6; color: #4b5563",
+        }
     return colors.get(val, "")
+
+
+def _cls_badge(val: str) -> str:
+    """Wrap classification value in a styled badge span."""
+    css_cls = {
+        "Both": "cls-both", "IO List Only": "cls-io-only",
+        "PLC Only": "cls-plc-only", "Conflict": "cls-conflict", "Spare": "cls-spare",
+    }
+    c = css_cls.get(val, "")
+    return f'<span class="{c}">{val}</span>' if c else val
+
+
+def df_to_html(dataframe: pd.DataFrame, max_height: int = 500) -> str:
+    """Render a DataFrame as a scrollable HTML table with .cx-table class."""
+    import html as _html
+    cols = list(dataframe.columns)
+    rows_html = []
+    for _, row in dataframe.iterrows():
+        cells = []
+        for col in cols:
+            raw = str(row[col]) if pd.notna(row[col]) else ""
+            if col == "Classification":
+                cells.append(f"<td>{_cls_badge(raw)}</td>")
+            else:
+                cells.append(f"<td>{_html.escape(raw)}</td>")
+        rows_html.append("<tr>" + "".join(cells) + "</tr>")
+    header = "<tr>" + "".join(f"<th>{_html.escape(c)}</th>" for c in cols) + "</tr>"
+    return (
+        f'<div class="cx-table-wrap" style="max-height:{max_height}px;overflow:auto;">'
+        f'<table class="cx-table">{header}{chr(10).join(rows_html)}</table></div>'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +238,260 @@ def color_classification(val: str) -> str:
 with st.sidebar:
     st.title("IO Crosscheck")
     st.caption("PLC-to-IO List Device Verification Engine")
+
+    # Dark mode toggle disabled for now — keeping code but forcing light mode
+    if "dark_mode" not in st.session_state:
+        st.session_state["dark_mode"] = False
+    dark_mode = False
+
+    st.divider()
+
+    st.markdown("**Settings**")
+    sheet_name = st.text_input("Sheet Name", value="ESCO List", key="sidebar_sheet")
+    encoding = st.selectbox(
+        "CSV Encoding",
+        options=["latin-1", "utf-8", "cp1252"],
+        index=0,
+        key="sidebar_encoding",
+    )
+
+    st.divider()
+
+    st.markdown("**Classification Legend**")
+    st.markdown("""
+    <div class="legend-item"><span class="legend-dot" style="background:#22c55e;"></span> Both — confirmed in PLC &amp; IO List</div>
+    <div class="legend-item"><span class="legend-dot" style="background:#ef4444;"></span> IO List Only — missing from PLC</div>
+    <div class="legend-item"><span class="legend-dot" style="background:#3b82f6;"></span> PLC Only — missing from IO List</div>
+    <div class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span> Conflict — address match, name differs</div>
+    <div class="legend-item"><span class="legend-dot" style="background:#9ca3af;"></span> Spare — excluded from mismatch</div>
+    """, unsafe_allow_html=True)
+
+    st.divider()
+    st.caption("v0.1.0")
+
+
+# ---------------------------------------------------------------------------
+# Dark mode CSS overrides
+# ---------------------------------------------------------------------------
+
+if dark_mode:
+    st.markdown("""
+    <style>
+        /* ===== DARK MODE ===== */
+
+        /* Global text color catch-all */
+        .stApp, .stApp * { color: #e2e8f0; }
+
+        /* Main area backgrounds */
+        .stApp,
+        [data-testid="stAppViewContainer"],
+        .block-container,
+        header[data-testid="stHeader"],
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"] {
+            background-color: #0f172a !important;
+        }
+
+        /* Sidebar */
+        section[data-testid="stSidebar"],
+        section[data-testid="stSidebar"] > div {
+            background-color: #1e293b !important;
+        }
+        section[data-testid="stSidebar"] * { color: #e2e8f0 !important; }
+
+        /* Tabs */
+        .stTabs [data-baseweb="tab-list"] { background-color: transparent !important; }
+        .stTabs [data-baseweb="tab"] { color: #94a3b8 !important; }
+        .stTabs [aria-selected="true"] { color: #e2e8f0 !important; }
+        .stTabs [data-baseweb="tab-highlight"] { background-color: #4472C4 !important; }
+        .stTabs [data-baseweb="tab-border"] { background-color: #334155 !important; }
+
+        /* Metric cards */
+        .metric-total div[data-testid="stMetric"] { background: linear-gradient(135deg, #1e293b, #334155) !important; border-left-color: #94a3b8 !important; }
+        .metric-both div[data-testid="stMetric"] { background: linear-gradient(135deg, #14532d, #166534) !important; border-left-color: #22c55e !important; }
+        .metric-io-only div[data-testid="stMetric"] { background: linear-gradient(135deg, #7f1d1d, #991b1b) !important; border-left-color: #ef4444 !important; }
+        .metric-plc-only div[data-testid="stMetric"] { background: linear-gradient(135deg, #1e3a5f, #1e40af) !important; border-left-color: #3b82f6 !important; }
+        .metric-conflict div[data-testid="stMetric"] { background: linear-gradient(135deg, #78350f, #92400e) !important; border-left-color: #f59e0b !important; }
+        .metric-spare div[data-testid="stMetric"] { background: linear-gradient(135deg, #1e293b, #334155) !important; border-left-color: #6b7280 !important; }
+        div[data-testid="stMetric"] * { color: #e2e8f0 !important; }
+        div[data-testid="stMetric"] { border-color: #475569 !important; }
+
+        /* Getting-started card */
+        .getting-started { background: #1e293b !important; border-color: #475569 !important; }
+        .getting-started * { color: #cbd5e1 !important; }
+        .getting-started h4 { color: #93c5fd !important; }
+        .gs-subtitle { color: #94a3b8 !important; }
+        .gs-table th { border-bottom-color: #475569 !important; color: #e2e8f0 !important; }
+        .gs-table td { border-bottom-color: #334155 !important; }
+        .gs-table tr:nth-child(even) { background: rgba(148, 163, 184, 0.08) !important; }
+        .getting-started .cls-both { background-color: #166534 !important; color: #bbf7d0 !important; }
+        .getting-started .cls-plc-only { background-color: #1e40af !important; color: #bfdbfe !important; }
+
+        /* Inputs, selects, text areas */
+        div[data-baseweb="input"],
+        div[data-baseweb="input"] input,
+        div[data-baseweb="select"],
+        div[data-baseweb="select"] div,
+        div[data-baseweb="popover"] li,
+        .stTextInput > div > div,
+        .stSelectbox > div > div,
+        .stTextArea textarea {
+            background-color: #1e293b !important;
+            color: #e2e8f0 !important;
+        }
+
+        /* File uploader — container and label area */
+        [data-testid="stFileUploader"],
+        [data-testid="stFileUploader"] > div,
+        [data-testid="stFileUploader"] > section,
+        [data-testid="stFileUploader"] > label,
+        [data-testid="stFileUploadDropzone"] {
+            background-color: transparent !important;
+            color: #e2e8f0 !important;
+        }
+        [data-testid="stFileUploader"] label,
+        [data-testid="stFileUploader"] span,
+        [data-testid="stFileUploader"] small,
+        [data-testid="stFileUploader"] p {
+            color: #e2e8f0 !important;
+        }
+        [data-testid="stFileUploaderDropzone"] {
+            background-color: #1e293b !important;
+            border: 1px solid #475569 !important;
+            border-radius: 12px !important;
+        }
+        /* Browse files button — visible border and text */
+        [data-testid="stFileUploaderDropzone"] button,
+        [data-testid="stFileUploaderDropzone"] [data-testid="stBaseButton-secondary"] {
+            border: 1px solid #94a3b8 !important;
+            color: #e2e8f0 !important;
+            background-color: #334155 !important;
+            border-radius: 6px !important;
+        }
+        [data-testid="stFileUploaderDropzone"] button span,
+        [data-testid="stFileUploaderDropzone"] button p {
+            color: #e2e8f0 !important;
+        }
+        [data-testid="stFileUploaderDropzone"] span,
+        [data-testid="stFileUploaderDropzone"] small { color: #94a3b8 !important; }
+
+        /* Theme toggle icon — yellow sun in dark mode */
+        section[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"]:first-of-type span[data-testid="stIconMaterial"] {
+            color: #facc15 !important;
+        }
+
+        /* Buttons */
+        .stButton > button { border-color: #475569 !important; color: #e2e8f0 !important; background-color: #1e293b !important; }
+        .stButton > button:hover { background-color: #334155 !important; }
+        .stButton > button[kind="primary"],
+        .stButton > button[data-testid="stBaseButton-primary"] {
+            background-color: #4472C4 !important; border-color: #4472C4 !important; color: #ffffff !important;
+        }
+        .stButton > button[kind="primary"]:hover,
+        .stButton > button[data-testid="stBaseButton-primary"]:hover {
+            background-color: #3561a8 !important;
+        }
+        .stDownloadButton > button {
+            border: 1px solid #475569 !important;
+            color: #e2e8f0 !important;
+            background-color: #1e293b !important;
+        }
+        .stDownloadButton > button:hover { background-color: #334155 !important; }
+        .stDownloadButton > button span,
+        .stDownloadButton > button p { color: #e2e8f0 !important; }
+
+        /* Segmented control / radio pills */
+        [data-testid="stSegmentedControl"] { background-color: #1e293b !important; border: 1px solid #475569 !important; border-radius: 8px !important; }
+        [data-testid="stSegmentedControl"] label,
+        [data-testid="stSegmentedControl"] span,
+        [data-testid="stSegmentedControl"] p,
+        [data-testid="stSegmentedControl"] div,
+        [data-testid="stSegmentedControl"] button {
+            color: #94a3b8 !important;
+            background-color: transparent !important;
+        }
+        [data-testid="stSegmentedControl"] button[aria-checked="true"],
+        [data-testid="stSegmentedControl"] button[aria-checked="true"] span,
+        [data-testid="stSegmentedControl"] button[aria-checked="true"] p,
+        [data-testid="stSegmentedControl"] button[aria-checked="true"] div {
+            background-color: #4472C4 !important;
+            color: #ffffff !important;
+        }
+
+        /* Input placeholders */
+        ::placeholder { color: #64748b !important; opacity: 1 !important; }
+        input::placeholder, textarea::placeholder { color: #64748b !important; }
+
+        /* Dataframe (st.dataframe — Glide Data Grid, used in L5X tab) */
+        div[data-testid="stDataFrame"] { background-color: #1e293b !important; }
+        div[data-testid="stDataFrame"] * { color: #e2e8f0 !important; }
+
+        /* Custom HTML results table — dark mode */
+        .cx-table-wrap { border-color: #475569 !important; }
+        .cx-table th { background: #0f172a !important; color: #e2e8f0 !important; border-bottom-color: #475569 !important; }
+        .cx-table td { color: #e2e8f0 !important; border-bottom-color: #334155 !important; }
+        .cx-table tr:nth-child(even) { background: rgba(148, 163, 184, 0.08) !important; }
+        .cx-table tr:hover { background: rgba(148, 163, 184, 0.15) !important; }
+
+        /* Classification badge pills — dark mode */
+        .cls-both { background-color: #166534 !important; color: #bbf7d0 !important; }
+        .cls-both-rack { background-color: #713f12 !important; color: #fef08a !important; }
+        .cls-io-only { background-color: #991b1b !important; color: #fecaca !important; }
+        .cls-plc-only { background-color: #1e40af !important; color: #bfdbfe !important; }
+        .cls-conflict { background-color: #92400e !important; color: #fed7aa !important; }
+        .cls-spare { background-color: #374151 !important; color: #d1d5db !important; }
+
+        /* Alerts: keep their colored backgrounds, ensure text is readable */
+        .stAlert { border-radius: 8px !important; }
+        [data-testid="stNotification"] { background-color: #1e293b !important; border: 1px solid #475569 !important; }
+        [data-testid="stNotification"] p,
+        [data-testid="stNotification"] span,
+        [data-testid="stNotification"] div { color: #e2e8f0 !important; }
+        /* Warning alert — amber tint */
+        div[data-baseweb="notification"][kind="warning"],
+        .stAlert[data-baseweb] { background-color: rgba(245, 158, 11, 0.15) !important; border-left: 4px solid #f59e0b !important; }
+        /* Info alert — blue tint */
+        div[data-baseweb="notification"][kind="info"] { background-color: rgba(59, 130, 246, 0.15) !important; border-left: 4px solid #3b82f6 !important; }
+        /* Success alert — green tint */
+        div[data-baseweb="notification"][kind="positive"],
+        [data-testid="stAlert"] div[role="alert"] { background-color: rgba(34, 197, 94, 0.15) !important; border-left: 4px solid #22c55e !important; }
+
+        /* Captions */
+        [data-testid="stCaptionContainer"] * { color: #94a3b8 !important; }
+
+        /* Dividers */
+        hr { border-color: #334155 !important; }
+
+        /* Expanders */
+        details[data-testid="stExpander"] { background-color: #1e293b !important; border: 1px solid #475569 !important; border-radius: 12px !important; }
+        details[data-testid="stExpander"] * { color: #e2e8f0 !important; }
+        details[data-testid="stExpander"] summary { background-color: #1e293b !important; border-radius: 12px !important; }
+
+        /* Code blocks */
+        .stCodeBlock, .stCodeBlock code, pre { background-color: #0f172a !important; color: #e2e8f0 !important; border: 1px solid #334155 !important; border-radius: 8px !important; }
+
+        /* Spinner */
+        .stSpinner > div { color: #e2e8f0 !important; }
+
+        /* Popover / dropdown menus */
+        [data-baseweb="popover"], [data-baseweb="menu"] { background-color: #1e293b !important; border: 1px solid #475569 !important; }
+        [data-baseweb="popover"] *, [data-baseweb="menu"] * { color: #e2e8f0 !important; }
+        [data-baseweb="menu"] li:hover { background-color: #334155 !important; }
+
+        /* Help tooltips */
+        [data-testid="stTooltipIcon"] svg { color: #94a3b8 !important; fill: #94a3b8 !important; }
+
+        /* Markdown bold text */
+        .stMarkdown strong { color: #e2e8f0 !important; }
+
+        /* Column containers — prevent white gaps */
+        [data-testid="stHorizontalBlock"],
+        [data-testid="stVerticalBlock"],
+        [data-testid="stColumn"] {
+            background-color: transparent !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +506,7 @@ tab_crosscheck, tab_l5x = st.tabs(["IO Crosscheck", "L5X Explorer"])
 # ===================================================================
 
 with tab_crosscheck:
-    st.subheader("Upload Files")
+    st.markdown("### Upload Files")
     up_col1, up_col2, up_col3 = st.columns(3)
     with up_col1:
         csv_file = st.file_uploader(
@@ -149,51 +530,57 @@ with tab_crosscheck:
             key="l5x_enrich_upload",
         )
 
-    set_col1, set_col2, set_col3 = st.columns([2, 2, 1])
-    with set_col1:
-        sheet_name = st.text_input("Sheet Name", value="ESCO List")
-    with set_col2:
-        encoding = st.selectbox(
-            "CSV Encoding",
-            options=["latin-1", "utf-8", "cp1252"],
-            index=0,
-        )
-    with set_col3:
-        st.markdown("<br>", unsafe_allow_html=True)
-        run_btn = st.button(
-            "Run Analysis",
-            type="primary",
-            use_container_width=True,
-            disabled=(csv_file is None or xlsx_file is None),
-        )
+    run_btn = st.button(
+        "Run Analysis",
+        type="primary",
+        disabled=(csv_file is None or xlsx_file is None),
+    )
 
     if not run_btn and "results" not in st.session_state:
-        st.divider()
-        st.markdown(
-            "Upload your **PLC Tag Export CSV** and **IO List XLSX** above, "
-            "then click **Run Analysis** to verify every device. "
-            "Optionally add an **L5X project file** to enrich results with "
-            "source confirmation from alias mappings and module validation."
-        )
-
-        st.markdown("##### Matching Strategies (Priority Order)")
-        strategies_data = {
-            "#": [1, 2, 4, 5],
-            "Strategy": [
-                "Direct CLX Address Match",
-                "PLC5 Rack Address Match",
-                "ENet Module Tag Extraction",
-                "Tag Name Normalization",
-            ],
-            "Confidence": ["Exact", "Exact", "Exact", "High"],
-            "Description": [
-                "IO List PLC address vs PLC COMMENT specifiers (case-insensitive)",
-                "PLC5-format addresses vs PLC TAG names",
-                "Extract device IDs from E300_/VFD_/IPDev_ prefixed tags",
-                "Suffix-stripped, case-folded exact name matching",
-            ],
-        }
-        st.dataframe(pd.DataFrame(strategies_data), width="stretch", hide_index=True)
+        st.markdown("""
+        <div class="getting-started">
+            <h4>Getting Started</h4>
+            <p style="margin-bottom: 0.8rem;">
+                Upload your <strong>PLC Tag Export CSV</strong> and <strong>IO List XLSX</strong> above,
+                then click <strong>Run Analysis</strong> to verify every device.
+                Optionally add an <strong>L5X project file</strong> to enrich results with
+                source confirmation from alias mappings and module validation.
+            </p>
+            <p class="gs-subtitle">Matching Strategies (Priority Order)</p>
+            <table class="gs-table">
+                <tr>
+                    <th>#</th>
+                    <th>Strategy</th>
+                    <th>Confidence</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td>1</td>
+                    <td>Direct CLX Address Match</td>
+                    <td><span class="cls-both">Exact</span></td>
+                    <td>IO List PLC address vs PLC COMMENT specifiers</td>
+                </tr>
+                <tr>
+                    <td>2</td>
+                    <td>PLC5 Rack Address Match</td>
+                    <td><span class="cls-both">Exact</span></td>
+                    <td>PLC5-format addresses vs PLC TAG names</td>
+                </tr>
+                <tr>
+                    <td>4</td>
+                    <td>ENet Module Tag Extraction</td>
+                    <td><span class="cls-both">Exact</span></td>
+                    <td>Extract device IDs from E300_/VFD_/IPDev_ prefixed tags</td>
+                </tr>
+                <tr>
+                    <td>5</td>
+                    <td>Tag Name Normalization</td>
+                    <td><span class="cls-plc-only">High</span></td>
+                    <td>Suffix-stripped, case-folded exact name matching</td>
+                </tr>
+            </table>
+        </div>
+        """, unsafe_allow_html=True)
 
 
     # ---------------------------------------------------------------------------
@@ -277,19 +664,25 @@ with tab_crosscheck:
 
         # Summary metrics
         st.markdown("### Summary")
-        cols = st.columns(6)
-        metrics = [
-            ("Total", len(results), None),
-            ("Both", cls_counts.get("Both", 0), "normal"),
-            ("IO List Only", cls_counts.get("IO List Only", 0), "inverse"),
-            ("PLC Only", cls_counts.get("PLC Only", 0), None),
-            ("Conflicts", conflict_count, "inverse" if conflict_count > 0 else None),
-            ("Spares", cls_counts.get("Spare", 0), None),
+        metric_css_classes = [
+            "metric-total", "metric-both", "metric-io-only",
+            "metric-plc-only", "metric-conflict", "metric-spare",
         ]
-        for col, (label, value, delta_color) in zip(cols, metrics):
+        metrics = [
+            ("Total", len(results)),
+            ("Both", cls_counts.get("Both", 0)),
+            ("IO List Only", cls_counts.get("IO List Only", 0)),
+            ("PLC Only", cls_counts.get("PLC Only", 0)),
+            ("Conflicts", conflict_count),
+            ("Spares", cls_counts.get("Spare", 0)),
+        ]
+        cols = st.columns(6)
+        for col, css_cls, (label, value) in zip(cols, metric_css_classes, metrics):
             with col:
                 pct = f"{value / len(results) * 100:.1f}%" if results else "0%"
+                st.markdown(f'<div class="{css_cls}">', unsafe_allow_html=True)
                 st.metric(label, value, pct)
+                st.markdown('</div>', unsafe_allow_html=True)
 
         # Parse info
         l5x_used = st.session_state.get("l5x_used", False)
@@ -364,15 +757,7 @@ with tab_crosscheck:
         if empty_cols:
             display_df = display_df.drop(columns=empty_cols)
 
-        st.dataframe(
-            display_df.style.map(
-                color_classification,
-                subset=["Classification"],
-            ),
-            width="stretch",
-            height=500,
-            hide_index=True,
-        )
+        st.markdown(df_to_html(display_df, max_height=500), unsafe_allow_html=True)
 
         # Conflicts detail
         if conflict_count > 0:
@@ -380,21 +765,9 @@ with tab_crosscheck:
             st.markdown("### Conflicts Requiring Review")
             st.warning(f"{conflict_count} device(s) have address matches but different names. These require human review.")
             conflict_df = df[df["Conflict"] == "YES"][
-                ["Device Tag", "IO Tag", "PLC Address", "PLC Description", "Audit Trail"]
+                ["Device Tag", "IO Tag", "PLC Address", "PLC Description"]
             ]
-            st.dataframe(conflict_df, width="stretch", hide_index=True)
-
-        # Audit trail expander
-        st.divider()
-        st.markdown("### Audit Trail")
-        st.caption("Expand any device to see the full matching decision trail.")
-
-        audit_df = filtered_df[["Device Tag", "IO Tag", "Classification", "Audit Trail"]]
-        for _, row in audit_df.head(100).iterrows():
-            tag_label = row["Device Tag"] or row["IO Tag"] or "(PLC Only)"
-            with st.expander(f"{tag_label} — {row['Classification']}"):
-                for step in row["Audit Trail"].split(" | "):
-                    st.markdown(f"- {step}")
+            st.markdown(df_to_html(conflict_df, max_height=400), unsafe_allow_html=True)
 
         # -------------------------------------------------------------------
         # L5X-specific: Inter-Controller MSG Tags
@@ -442,11 +815,6 @@ with tab_crosscheck:
 
 with tab_l5x:
     st.markdown("### L5X Project Explorer")
-    st.markdown(
-        "Upload an RSLogix 5000 / Studio 5000 **L5X project file** to extract "
-        "every tag, module, alias, bit-level description, and structure member "
-        "into a downloadable Markdown report."
-    )
 
     l5x_file = st.file_uploader(
         "L5X Project File",
@@ -461,6 +829,18 @@ with tab_l5x:
         disabled=(l5x_file is None),
         key="l5x_extract",
     )
+
+    if not l5x_extract_btn and "l5x_data" not in st.session_state:
+        st.markdown("""
+        <div class="getting-started">
+            <h4>L5X Project Explorer</h4>
+            <p>
+                Upload an RSLogix 5000 / Studio 5000 <strong>L5X project file</strong> to extract
+                every tag, module, alias, bit-level description, and structure member
+                into a downloadable Markdown report.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 
     if l5x_extract_btn and l5x_file is not None:
         with st.spinner("Extracting L5X data... This may take a moment for large projects."):
@@ -488,19 +868,20 @@ with tab_l5x:
         st.success(f"Extracted data from **{filename}**")
 
         # Summary metrics
+        l5x_metrics = [
+            ("Modules", stats.get("total_modules", 0)),
+            ("Controller Tags", stats.get("total_controller_tags", 0)),
+            ("Alias Tags", stats.get("controller_alias_tags", 0)),
+            ("Programs", stats.get("total_programs", 0)),
+            ("Program Tags", stats.get("total_program_tags", 0)),
+            ("Bit Descriptions", stats.get("bit_level_descriptions", 0)),
+        ]
         m_cols = st.columns(6)
-        with m_cols[0]:
-            st.metric("Modules", stats.get("total_modules", 0))
-        with m_cols[1]:
-            st.metric("Controller Tags", stats.get("total_controller_tags", 0))
-        with m_cols[2]:
-            st.metric("Alias Tags", stats.get("controller_alias_tags", 0))
-        with m_cols[3]:
-            st.metric("Programs", stats.get("total_programs", 0))
-        with m_cols[4]:
-            st.metric("Program Tags", stats.get("total_program_tags", 0))
-        with m_cols[5]:
-            st.metric("Bit Descriptions", stats.get("bit_level_descriptions", 0))
+        for col, (label, value) in zip(m_cols, l5x_metrics):
+            with col:
+                st.markdown('<div class="metric-total">', unsafe_allow_html=True)
+                st.metric(label, value)
+                st.markdown('</div>', unsafe_allow_html=True)
 
         # Download button
         md_bytes = st.session_state["l5x_md"].encode("utf-8")
