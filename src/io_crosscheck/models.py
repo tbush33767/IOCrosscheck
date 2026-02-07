@@ -35,6 +35,7 @@ class Classification(Enum):
     PLC_ONLY = "PLC Only"
     CONFLICT = "Conflict"
     SPARE = "Spare"
+    RACK_ONLY = "Rack Only"
 
 
 class Confidence(Enum):

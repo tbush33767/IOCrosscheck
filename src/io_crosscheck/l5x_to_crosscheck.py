@@ -15,6 +15,7 @@ import re
 from typing import Any
 
 from io_crosscheck.models import (
+    Classification,
     MatchResult,
     PLCTag,
     RecordType,
@@ -58,6 +59,7 @@ def extract_l5x_enrichment(data: dict[str, Any]) -> dict[str, Any]:
         alias_by_name:    dict  — normalized tag name → alias dict
         module_names:     set   — names of all IO-catalog modules
         module_addresses: set   — normalized addresses of all IO modules
+        rung_references:  set   — lowercased operands found in rung CDATA
         msg_tags:         list  — inter-controller MSG aliases (flagged)
         consumed_tags:    list  — consumed/UDT-reference aliases (flagged)
     """
@@ -120,11 +122,16 @@ def extract_l5x_enrichment(data: dict[str, Any]) -> dict[str, Any]:
             if addr:
                 module_addresses.add(addr.lower())
 
+    # Build rung reference set from CDATA operands
+    rung_refs_list = data.get("rung_references", [])
+    rung_references: set[str] = set(rung_refs_list)
+
     return {
         "alias_by_address": alias_by_address,
         "alias_by_name": alias_by_name,
         "module_names": module_names,
         "module_addresses": module_addresses,
+        "rung_references": rung_references,
         "msg_tags": msg_tags,
         "consumed_tags": consumed_tags,
     }
@@ -146,9 +153,11 @@ def enrich_results(
     alias_by_name = l5x_enrichment["alias_by_name"]
     module_names = l5x_enrichment["module_names"]
     module_addresses = l5x_enrichment["module_addresses"]
+    rung_references = l5x_enrichment.get("rung_references", set())
 
     for result in results:
         l5x_confirmations: list[str] = []
+        alias_found_for_device = False
 
         # --- Check PLC tag side ---
         if result.plc_tag:
@@ -196,14 +205,89 @@ def enrich_results(
                 if addr_key in alias_by_address:
                     aliases = alias_by_address[addr_key]
                     alias_names = [a["name"] for a in aliases]
+                    alias_found_for_device = True
                     l5x_confirmations.append(
                         f"L5X alias(es) {alias_names} reference device address '{dev.plc_address}'"
                     )
+
+                    # If the current PLC tag is just a rack-level base name
+                    # (e.g. "Rack0_Group0_Slot0_IO"), upgrade it to the real
+                    # alias tag name from the L5X so the user sees the actual
+                    # PLC tag instead of the rack structure.
+                    if result.plc_tag and len(aliases) == 1:
+                        alias = aliases[0]
+                        rack_base = result.plc_tag.name.strip().lower()
+                        addr_base = dev.plc_address.split(".")[0].strip().lower()
+                        if rack_base == addr_base:
+                            old_name = result.plc_tag.name
+                            result.plc_tag = PLCTag(
+                                name=alias["name"],
+                                description=alias.get("description", "") or result.plc_tag.description,
+                                record_type=RecordType.TAG,
+                                specifier=alias["alias_for"],
+                            )
+                            l5x_confirmations.append(
+                                f"L5X upgraded PLC tag from rack-level '{old_name}' to alias '{alias['name']}'"
+                            )
+
+                # --- Rung CDATA pass for rack-style addresses with no alias ---
+                # If the device has a rack-style address (CLX or PLC5) but
+                # the L5X has no alias for it, check whether the full
+                # address is referenced directly in rung logic.
+                addr_fmt = detect_address_format(dev.plc_address)
+                is_rack_addr = addr_fmt in ("CLX", "PLC5")
+
+                if (
+                    not alias_found_for_device
+                    and is_rack_addr
+                    and rung_references
+                    and result.classification != Classification.SPARE
+                ):
+                    full_addr_lower = dev.plc_address.lower()
+                    if full_addr_lower in rung_references:
+                        l5x_confirmations.append(
+                            f"L5X rung CDATA references address '{dev.plc_address}' directly (no alias, used in logic)"
+                        )
+                    else:
+                        # IO point has a rack-style address but no L5X alias
+                        # AND is not referenced in any rung logic — flag it
+                        result.classification = Classification.RACK_ONLY
+                        result.conflict_flag = True
+                        l5x_confirmations.append(
+                            f"L5X: No alias found for '{dev.plc_address}' and address not referenced in rung CDATA — IO point may be unused"
+                        )
 
             # Check if device tag name matches a module name
             if dev.device_tag and dev.device_tag.lower() in module_names:
                 l5x_confirmations.append(
                     f"L5X module '{dev.device_tag}' confirms IO hardware exists"
+                )
+
+        # --- Spare CDATA check ---
+        # If the IO list labels this point as spare but the address (or an
+        # alias for it) appears in rung CDATA, the point is actually used
+        # in logic and should be flagged as a conflict.
+        if (
+            result.classification == Classification.SPARE
+            and result.io_device
+            and result.io_device.plc_address
+            and rung_references
+        ):
+            addr_lower = result.io_device.plc_address.lower()
+            addr_key = normalize_address(result.io_device.plc_address)
+            # Check if the full address is directly in rung CDATA
+            found_in_cdata = addr_lower in rung_references
+            # Also check if any alias for this address is in rung CDATA
+            if not found_in_cdata and addr_key in alias_by_address:
+                for alias in alias_by_address[addr_key]:
+                    if alias["name"].lower() in rung_references:
+                        found_in_cdata = True
+                        break
+            if found_in_cdata:
+                result.classification = Classification.CONFLICT
+                result.conflict_flag = True
+                l5x_confirmations.append(
+                    f"L5X: IO list marks '{result.io_device.plc_address}' as spare but address is referenced in rung CDATA — point is used in logic"
                 )
 
         # Apply confirmations

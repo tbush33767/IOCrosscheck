@@ -1,6 +1,7 @@
 """Extract all available data from an RSLogix 5000 / Studio 5000 L5X project file."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,8 @@ def extract_l5x(filepath: str | Path) -> dict[str, Any]:
     """Walk the entire L5X project tree and return a structured dict of all data.
 
     Returns a dict with keys:
-        filename, controller, modules, controller_tags, programs, statistics
+        filename, controller, modules, controller_tags, programs,
+        rung_references, statistics
     """
     filepath = Path(filepath)
     project = l5x.Project(str(filepath))
@@ -29,6 +31,7 @@ def extract_l5x(filepath: str | Path) -> dict[str, Any]:
         "modules": _extract_modules(project),
         "controller_tags": _extract_scope_tags(project.controller.tags),
         "programs": _extract_programs(project),
+        "rung_references": _extract_rung_references(project),
         "statistics": {},
     }
 
@@ -340,6 +343,58 @@ def _extract_programs(project: l5x.Project) -> list[dict[str, Any]]:
             programs.append({"name": prog_name, "tags": {"alias_tags": [], "regular_tags": []}, "error": "Could not read"})
 
     return programs
+
+
+# ---------------------------------------------------------------------------
+# Rung CDATA references
+# ---------------------------------------------------------------------------
+
+# Regex to extract operands from neutral-text ladder logic.
+# Matches instruction operands inside parentheses, e.g. XIC(Tag), MOV(src,dst)
+_OPERAND_RE = re.compile(r"[A-Z]{2,}[A-Z0-9]*\(([^)]+)\)")
+
+
+def _extract_rung_references(project: l5x.Project) -> list[str]:
+    """Extract all tag/address operands referenced in rung CDATA across all programs.
+
+    Walks the raw XML tree to find every ``<Rung>`` → ``<Text>`` element,
+    parses the neutral-text content, and returns a flat list of every
+    unique operand (lowercased) found in ladder logic.
+
+    This enables checking whether a specific IO address is actually used
+    in the PLC program, even if it has no alias tag.
+    """
+    refs: set[str] = set()
+
+    try:
+        root = project.doc
+    except Exception:
+        return []
+
+    for text_elem in root.iter("Text"):
+        # Try .text first, then check for CDATA in tail or child text nodes
+        cdata = text_elem.text
+        if not cdata or not cdata.strip():
+            # Some L5X files wrap CDATA inside the element differently;
+            # try itertext() to capture all nested text content
+            cdata = "".join(text_elem.itertext()).strip()
+        if not cdata or not cdata.strip():
+            continue
+        cdata = cdata.strip()
+        # Extract all instruction operands
+        for match in _OPERAND_RE.finditer(cdata):
+            operand_group = match.group(1)
+            # Split on comma for multi-operand instructions like MOV(src,dst)
+            for operand in operand_group.split(","):
+                operand = operand.strip()
+                if not operand:
+                    continue
+                # Skip pure numeric literals (e.g. 0, 1, 3.14)
+                if re.match(r"^-?\d+(\.\d+)?$", operand):
+                    continue
+                refs.add(operand.lower())
+
+    return sorted(refs)
 
 
 # ---------------------------------------------------------------------------

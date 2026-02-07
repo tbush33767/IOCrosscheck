@@ -23,13 +23,14 @@ from io_crosscheck.models import (
 # Helpers to build minimal L5X data dicts
 # ---------------------------------------------------------------------------
 
-def _make_data(alias_tags=None, regular_tags=None, modules=None):
+def _make_data(alias_tags=None, regular_tags=None, modules=None, rung_references=None):
     return {
         "controller_tags": {
             "alias_tags": alias_tags or [],
             "regular_tags": regular_tags or [],
         },
         "modules": modules or [],
+        "rung_references": rung_references or [],
     }
 
 
@@ -405,3 +406,238 @@ class TestFullEnrichmentPipeline:
         result = _match_result(plc_name="AN601_EV", specifier="Rack14:O.Data[3].2")
         enrich_results([result], enrichment)
         assert "L5X" in result.sources
+
+
+# ===========================================================================
+# Rung CDATA enrichment — rack-style address detection & unused flagging
+# ===========================================================================
+
+class TestRungCdataAddressFoundInCdata:
+    """When no alias exists but the full address IS in rung CDATA, note it."""
+
+    def test_plc5_address_found_in_cdata(self):
+        data = _make_data(
+            rung_references=["rack0_group0_slot0_io.read[4]", "some_other_tag"],
+        )
+        enrichment = extract_l5x_enrichment(data)
+
+        result = _match_result(
+            plc_name="Rack0_Group0_Slot0_IO",
+            dev_tag="LT611",
+            plc_address="Rack0_Group0_Slot0_IO.READ[4]",
+        )
+        enrich_results([result], enrichment)
+
+        assert any("rung CDATA references" in s for s in result.audit_trail)
+        assert result.classification == Classification.BOTH
+
+    def test_clx_address_found_in_cdata(self):
+        """CLX rack address like Rack26:12:O.Data.8 found in CDATA."""
+        data = _make_data(
+            rung_references=["rack26:12:o.data.8", "some_other_tag"],
+        )
+        enrichment = extract_l5x_enrichment(data)
+
+        result = _match_result(
+            plc_name="TSV246_EV",
+            dev_tag="TSV246",
+            plc_address="Rack26:12:O.Data.8",
+        )
+        enrich_results([result], enrichment)
+
+        assert any("rung CDATA references" in s for s in result.audit_trail)
+        assert result.classification == Classification.BOTH
+
+
+class TestRungCdataAddressNotInCdata:
+    """When no alias AND no rung CDATA reference, flag as RACK_ONLY."""
+
+    def test_plc5_address_not_in_cdata(self):
+        data = _make_data(
+            rung_references=["some_other_tag", "unrelated_address"],
+        )
+        enrichment = extract_l5x_enrichment(data)
+
+        result = _match_result(
+            plc_name="Rack0_Group0_Slot0_IO",
+            dev_tag="LT611",
+            plc_address="Rack0_Group0_Slot0_IO.READ[4]",
+        )
+        enrich_results([result], enrichment)
+
+        assert result.classification == Classification.RACK_ONLY
+        assert result.conflict_flag is True
+        assert any("may be unused" in s for s in result.audit_trail)
+
+    def test_clx_address_not_in_cdata(self):
+        """CLX rack address not found in CDATA — real-world scenario."""
+        data = _make_data(
+            rung_references=["some_other_tag", "unrelated_address"],
+        )
+        enrichment = extract_l5x_enrichment(data)
+
+        result = _match_result(
+            plc_name="TSV246_EV",
+            dev_tag="TSV246",
+            plc_address="Rack26:12:O.Data.8",
+        )
+        enrich_results([result], enrichment)
+
+        assert result.classification == Classification.RACK_ONLY
+        assert result.conflict_flag is True
+        assert any("may be unused" in s for s in result.audit_trail)
+
+    def test_no_rung_refs_available(self):
+        """When rung_references is empty, CDATA pass is skipped (no false positives)."""
+        data = _make_data()  # no rung_references
+        enrichment = extract_l5x_enrichment(data)
+
+        result = _match_result(
+            plc_name="TSV246_EV",
+            dev_tag="TSV246",
+            plc_address="Rack26:12:O.Data.8",
+        )
+        enrich_results([result], enrichment)
+
+        assert result.classification == Classification.BOTH
+        assert result.conflict_flag is False
+
+
+class TestRungCdataSkipsAliasedTags:
+    """When an alias IS found for the address, the CDATA pass should not fire."""
+
+    def test_aliased_tag_not_flagged(self):
+        data = _make_data(
+            alias_tags=[
+                _alias("LT_611", "Rack0_Group0_Slot0_IO.READ[4]", "Level Transmitter"),
+            ],
+            rung_references=[],  # empty CDATA — but alias exists, so no flag
+        )
+        enrichment = extract_l5x_enrichment(data)
+
+        result = _match_result(
+            plc_name="Rack0_Group0_Slot0_IO",
+            dev_tag="LT611",
+            plc_address="Rack0_Group0_Slot0_IO.READ[4]",
+        )
+        enrich_results([result], enrichment)
+
+        assert result.plc_tag.name == "LT_611"
+        assert result.classification != Classification.RACK_ONLY
+        assert result.conflict_flag is False
+
+
+class TestRungCdataOnlyAffectsRackAddresses:
+    """Non-rack-style addresses should not trigger the CDATA check."""
+
+    def test_non_rack_address_unaffected(self):
+        data = _make_data(
+            rung_references=["some_tag"],
+        )
+        enrichment = extract_l5x_enrichment(data)
+
+        # ENet-style address — not rack-style
+        result = _match_result(
+            plc_name="LT_611",
+            dev_tag="LT611",
+            plc_address="E300_P621:I.Ch0Data",
+        )
+        enrich_results([result], enrichment)
+
+        assert result.classification == Classification.BOTH
+        assert result.conflict_flag is False
+
+
+# ===========================================================================
+# Spare CDATA check — spare IO points used in logic become conflicts
+# ===========================================================================
+
+class TestSpareCdataConflict:
+    """Spare IO points found in rung CDATA should be reclassified as conflicts."""
+
+    def test_spare_address_in_cdata_becomes_conflict(self):
+        """Direct address reference in CDATA -> spare becomes conflict."""
+        data = _make_data(
+            rung_references=["rack26:12:o.data.8", "some_other_tag"],
+        )
+        enrichment = extract_l5x_enrichment(data)
+
+        result = _match_result(
+            dev_tag="SPARE",
+            plc_address="Rack26:12:O.Data.8",
+            classification=Classification.SPARE,
+        )
+        enrich_results([result], enrichment)
+
+        assert result.classification == Classification.CONFLICT
+        assert result.conflict_flag is True
+        assert any("spare but address is referenced in rung CDATA" in s for s in result.audit_trail)
+
+    def test_spare_alias_in_cdata_becomes_conflict(self):
+        """Alias tag name for spare address found in CDATA -> conflict."""
+        data = _make_data(
+            alias_tags=[
+                _alias("LT_611", "Rack26:14:I.Ch0Data", "Level Transmitter"),
+            ],
+            rung_references=["lt_611", "some_other_tag"],
+        )
+        enrichment = extract_l5x_enrichment(data)
+
+        result = _match_result(
+            dev_tag="SPARE",
+            plc_address="Rack26:14:I.Ch0Data",
+            classification=Classification.SPARE,
+        )
+        enrich_results([result], enrichment)
+
+        assert result.classification == Classification.CONFLICT
+        assert result.conflict_flag is True
+
+    def test_spare_not_in_cdata_stays_spare(self):
+        """Spare address NOT in CDATA -> stays spare."""
+        data = _make_data(
+            rung_references=["some_other_tag", "unrelated_address"],
+        )
+        enrichment = extract_l5x_enrichment(data)
+
+        result = _match_result(
+            dev_tag="SPARE",
+            plc_address="Rack26:12:O.Data.8",
+            classification=Classification.SPARE,
+        )
+        enrich_results([result], enrichment)
+
+        assert result.classification == Classification.SPARE
+        assert result.conflict_flag is False
+
+    def test_spare_no_rung_refs_stays_spare(self):
+        """No rung references available -> spare stays spare."""
+        data = _make_data()
+        enrichment = extract_l5x_enrichment(data)
+
+        result = _match_result(
+            dev_tag="SPARE",
+            plc_address="Rack26:12:O.Data.8",
+            classification=Classification.SPARE,
+        )
+        enrich_results([result], enrichment)
+
+        assert result.classification == Classification.SPARE
+        assert result.conflict_flag is False
+
+    def test_spare_no_plc_address_stays_spare(self):
+        """Spare with no PLC address -> stays spare (nothing to check)."""
+        data = _make_data(
+            rung_references=["some_tag"],
+        )
+        enrichment = extract_l5x_enrichment(data)
+
+        result = _match_result(
+            dev_tag="SPARE",
+            plc_address="",
+            classification=Classification.SPARE,
+        )
+        enrich_results([result], enrichment)
+
+        assert result.classification == Classification.SPARE
+        assert result.conflict_flag is False

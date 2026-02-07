@@ -12,7 +12,7 @@ import pandas as pd
 from io_crosscheck.parsers import parse_plc_csv, parse_io_list_xlsx
 from io_crosscheck.classifiers import classify_tag, is_spare
 from io_crosscheck.strategies import MatchingEngine
-from io_crosscheck.reports import generate_xlsx_report, generate_html_report
+from io_crosscheck.reports import generate_xlsx_report, generate_html_report, generate_xlsm_report
 from io_crosscheck.models import Classification, MatchResult
 from io_crosscheck.l5x_extractor import extract_l5x
 from io_crosscheck.l5x_report import generate_l5x_markdown
@@ -91,6 +91,7 @@ st.markdown("""
     .cls-plc-only { background-color: #dbeafe; color: #1e40af; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }
     .cls-conflict { background-color: #ffedd5; color: #9a3412; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }
     .cls-spare { background-color: #f3f4f6; color: #4b5563; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }
+    .cls-rack-only { background-color: #fef3c7; color: #78350f; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }
 
     /* Alternating row stripes on dataframes */
     div[data-testid="stDataFrame"] table tbody tr:nth-child(even) {
@@ -99,9 +100,9 @@ st.markdown("""
 
     /* Custom HTML results table */
     .cx-table-wrap { border: 1px solid #cbd5e1; border-radius: 12px; overflow: auto; }
-    .cx-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
-    .cx-table th { position: sticky; top: 0; background: #f1f5f9; text-align: left; padding: 8px 10px; border-bottom: 2px solid #cbd5e1; white-space: nowrap; z-index: 1; }
-    .cx-table td { padding: 6px 10px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+    .cx-table { width: 100%; border-collapse: collapse; font-size: 0.85em; table-layout: fixed; }
+    .cx-table th { position: sticky; top: 0; background: #f1f5f9; text-align: left; padding: 8px 10px; border-bottom: 2px solid #cbd5e1; white-space: nowrap; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
+    .cx-table td { padding: 6px 10px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .cx-table tr:nth-child(even) { background: rgba(68, 114, 196, 0.04); }
     .cx-table tr:hover { background: rgba(68, 114, 196, 0.08); }
 
@@ -151,28 +152,32 @@ st.markdown("""
 # Helpers
 # ---------------------------------------------------------------------------
 
-def results_to_dataframe(results: list[MatchResult]) -> pd.DataFrame:
-    """Convert MatchResult list to a pandas DataFrame for display."""
+def results_to_dataframe(results: list[MatchResult], l5x_used: bool = False) -> pd.DataFrame:
+    """Convert MatchResult list to a pandas DataFrame for display.
+
+    Column headers include the data source in parentheses so a separate
+    Sources column is unnecessary.
+    """
+    l5x_tag = ", L5X" if l5x_used else ""
     rows = []
     for r in results:
         io = r.io_device
         plc = r.plc_tag
         rows.append({
-            "Device Tag": io.device_tag if io else "",
-            "IO Tag": io.io_tag if io else "",
-            "Panel": io.panel if io else "",
-            "Rack": io.rack if io else "",
-            "Slot": io.slot if io else "",
-            "Channel": io.channel if io else "",
-            "PLC Address": io.plc_address if io else "",
-            "Module Type": io.module_type if io else "",
+            "Device Tag (XLSX)": io.device_tag if io else "",
+            "IO Tag (XLSX)": io.io_tag if io else "",
+            "Panel (XLSX)": io.panel if io else "",
+            "Rack (XLSX)": io.rack if io else "",
+            "Slot (XLSX)": io.slot if io else "",
+            "Channel (XLSX)": io.channel if io else "",
+            "PLC Address (XLSX)": io.plc_address if io else "",
+            "Module Type (XLSX)": io.module_type if io else "",
             "Classification": r.classification.value,
             "Strategy": r.strategy_id if r.strategy_id else "",
             "Confidence": r.confidence.value if r.strategy_id else "",
-            "PLC Tag": plc.name if plc else "",
-            "PLC Description": plc.description if plc else "",
+            f"PLC Tag (CSV{l5x_tag})": plc.name if plc else "",
+            f"PLC Description (CSV{l5x_tag})": plc.description if plc else "",
             "Conflict": "YES" if r.conflict_flag else "",
-            "Sources": ", ".join(r.sources) if r.sources else "",
             "Audit Trail": " | ".join(r.audit_trail),
         })
     return pd.DataFrame(rows)
@@ -188,6 +193,7 @@ def color_classification(val: str) -> str:
             "PLC Only": "background-color: #1e40af; color: #bfdbfe",
             "Conflict": "background-color: #92400e; color: #fed7aa",
             "Spare": "background-color: #374151; color: #d1d5db",
+            "Rack Only": "background-color: #78350f; color: #fde68a",
         }
     else:
         colors = {
@@ -196,6 +202,7 @@ def color_classification(val: str) -> str:
             "PLC Only": "background-color: #dbeafe; color: #1e40af",
             "Conflict": "background-color: #ffedd5; color: #9a3412",
             "Spare": "background-color: #f3f4f6; color: #4b5563",
+            "Rack Only": "background-color: #fef3c7; color: #78350f",
         }
     return colors.get(val, "")
 
@@ -205,13 +212,35 @@ def _cls_badge(val: str) -> str:
     css_cls = {
         "Both": "cls-both", "IO List Only": "cls-io-only",
         "PLC Only": "cls-plc-only", "Conflict": "cls-conflict", "Spare": "cls-spare",
+        "Rack Only": "cls-rack-only",
     }
     c = css_cls.get(val, "")
     return f'<span class="{c}">{val}</span>' if c else val
 
 
+# Fixed column widths (px) keyed by column name — keeps layout stable across filters
+_COL_WIDTHS: dict[str, int] = {
+    "Device Tag (XLSX)": 120,
+    "IO Tag (XLSX)": 120,
+    "Panel (XLSX)": 60,
+    "Rack (XLSX)": 52,
+    "Slot (XLSX)": 48,
+    "Channel (XLSX)": 68,
+    "PLC Address (XLSX)": 150,
+    "Module Type (XLSX)": 100,
+    "Classification": 95,
+    "Strategy": 60,
+    "Confidence": 78,
+    "PLC Tag (CSV)": 150,
+    "PLC Tag (CSV, L5X)": 160,
+    "PLC Description (CSV)": 200,
+    "PLC Description (CSV, L5X)": 210,
+    "Conflict": 58,
+}
+
+
 def df_to_html(dataframe: pd.DataFrame, max_height: int = 500) -> str:
-    """Render a DataFrame as a scrollable HTML table with .cx-table class."""
+    """Render a DataFrame as a scrollable HTML table with click-to-copy cells."""
     import html as _html
     cols = list(dataframe.columns)
     rows_html = []
@@ -222,13 +251,83 @@ def df_to_html(dataframe: pd.DataFrame, max_height: int = 500) -> str:
             if col == "Classification":
                 cells.append(f"<td>{_cls_badge(raw)}</td>")
             else:
-                cells.append(f"<td>{_html.escape(raw)}</td>")
+                escaped = _html.escape(raw)
+                cells.append(f'<td class="cx-copy" title="{escaped}">{escaped}</td>')
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
     header = "<tr>" + "".join(f"<th>{_html.escape(c)}</th>" for c in cols) + "</tr>"
-    return (
-        f'<div class="cx-table-wrap" style="max-height:{max_height}px;overflow:auto;">'
-        f'<table class="cx-table">{header}{chr(10).join(rows_html)}</table></div>'
-    )
+    colgroup = "<colgroup>" + "".join(
+        f'<col style="width:{_COL_WIDTHS.get(c, 100)}px">'
+        for c in cols
+    ) + "</colgroup>"
+
+    # Build a self-contained HTML page so JS executes inside the component iframe
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 0.85em; }}
+  .cx-table-wrap {{ border: 1px solid #cbd5e1; border-radius: 12px; overflow: auto; max-height: {max_height}px; }}
+  .cx-table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
+  .cx-table th {{ position: sticky; top: 0; background: #f1f5f9; text-align: left; padding: 8px 10px;
+                  border-bottom: 2px solid #cbd5e1; white-space: nowrap; z-index: 1;
+                  overflow: hidden; text-overflow: ellipsis; }}
+  .cx-table td {{ padding: 6px 10px; border-bottom: 1px solid #e2e8f0; white-space: nowrap;
+                  overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+                  transition: background-color 0.2s; }}
+  .cx-table tr:nth-child(even) {{ background: rgba(68, 114, 196, 0.04); }}
+  .cx-table tr:hover {{ background: rgba(68, 114, 196, 0.08); }}
+  .cx-table td:hover {{ background-color: rgba(59,130,246,0.15) !important; }}
+  .cx-copied {{ background-color: rgba(34,197,94,0.25) !important; transition: background-color 0.1s; }}
+  .cls-both {{ background-color: #dcfce7; color: #166534; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }}
+  .cls-io-only {{ background-color: #fee2e2; color: #991b1b; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }}
+  .cls-plc-only {{ background-color: #dbeafe; color: #1e40af; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }}
+  .cls-conflict {{ background-color: #ffedd5; color: #9a3412; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }}
+  .cls-spare {{ background-color: #f3f4f6; color: #4b5563; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }}
+  .cls-rack-only {{ background-color: #fef3c7; color: #78350f; padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85em; }}
+  #toast {{ position: fixed; bottom: 12px; right: 12px; background: #166534; color: #fff;
+            padding: 6px 16px; border-radius: 8px; font-size: 0.85em; opacity: 0;
+            transition: opacity 0.3s; pointer-events: none; z-index: 999; }}
+  #toast.show {{ opacity: 1; }}
+</style>
+</head>
+<body>
+<div class="cx-table-wrap">
+  <table class="cx-table">{colgroup}{header}{chr(10).join(rows_html)}</table>
+</div>
+<div id="toast">Copied!</div>
+<script>
+document.addEventListener('click', function(e) {{
+    var td = e.target.closest('td');
+    if (!td) return;
+    var text = td.innerText.trim();
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(function() {{
+        td.classList.add('cx-copied');
+        var toast = document.getElementById('toast');
+        toast.textContent = 'Copied: ' + text;
+        toast.classList.add('show');
+        setTimeout(function(){{ td.classList.remove('cx-copied'); toast.classList.remove('show'); }}, 1200);
+    }}).catch(function(err) {{
+        // Fallback for older browsers / permission issues
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        td.classList.add('cx-copied');
+        var toast = document.getElementById('toast');
+        toast.textContent = 'Copied: ' + text;
+        toast.classList.add('show');
+        setTimeout(function(){{ td.classList.remove('cx-copied'); toast.classList.remove('show'); }}, 1200);
+    }});
+}});
+</script>
+</body>
+</html>"""
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +353,39 @@ with st.sidebar:
         index=0,
         key="sidebar_encoding",
     )
+
+    st.divider()
+
+    with st.expander("**RSLogix Integration**", expanded=False):
+        rslogix_enabled = st.toggle(
+            "Enable Search Automation",
+            value=st.session_state.get("rslogix_enabled", False),
+            key="rslogix_enabled",
+            help="Send tag searches to Studio 5000 via keyboard automation",
+        )
+        rslogix_mode = st.selectbox(
+            "Target Mode",
+            options=["VMware", "Studio 5000 (Direct)"],
+            index=0,
+            key="rslogix_mode",
+            help="Where is Studio 5000 running?",
+        )
+        default_title = "VMware Workstation" if rslogix_mode == "VMware" else "Logix Designer"
+        rslogix_window = st.text_input(
+            "Window Title Pattern",
+            value=st.session_state.get("rslogix_window", default_title),
+            key="rslogix_window",
+            help="Substring to match the target window title",
+        )
+        rslogix_delay = st.slider(
+            "Keystroke Delay (ms)",
+            min_value=200,
+            max_value=2000,
+            value=st.session_state.get("rslogix_delay", 500),
+            step=100,
+            key="rslogix_delay",
+            help="Wait time after focusing window before sending keystrokes",
+        )
 
     st.divider()
 
@@ -440,6 +572,7 @@ if dark_mode:
         .cls-plc-only { background-color: #1e40af !important; color: #bfdbfe !important; }
         .cls-conflict { background-color: #92400e !important; color: #fed7aa !important; }
         .cls-spare { background-color: #374151 !important; color: #d1d5db !important; }
+        .cls-rack-only { background-color: #78350f !important; color: #fde68a !important; }
 
         /* Alerts: keep their colored backgrounds, ensure text is readable */
         .stAlert { border-radius: 8px !important; }
@@ -625,8 +758,10 @@ with tab_crosscheck:
                 output_dir.mkdir()
                 xlsx_report_path = output_dir / "io_crosscheck_report.xlsx"
                 html_report_path = output_dir / "io_crosscheck_report.html"
+                xlsm_report_path = output_dir / "io_crosscheck_report.xlsm"
                 generate_xlsx_report(results, xlsx_report_path)
                 generate_html_report(results, html_report_path)
+                generate_xlsm_report(results, xlsm_report_path)
 
                 st.session_state["results"] = results
                 st.session_state["plc_tag_count"] = len(plc_tags)
@@ -634,7 +769,8 @@ with tab_crosscheck:
                 st.session_state["spare_count"] = sum(1 for d in io_devices if is_spare(d.io_tag))
                 st.session_state["xlsx_bytes"] = xlsx_report_path.read_bytes()
                 st.session_state["html_bytes"] = html_report_path.read_bytes()
-                st.session_state["df"] = results_to_dataframe(results)
+                st.session_state["xlsm_bytes"] = xlsm_report_path.read_bytes()
+                st.session_state["df"] = results_to_dataframe(results, l5x_used=l5x_cx_file is not None)
                 st.session_state["l5x_msg_tags"] = (
                     l5x_enrichment_data["msg_tags"] if l5x_enrichment_data else []
                 )
@@ -642,6 +778,13 @@ with tab_crosscheck:
                     l5x_enrichment_data["consumed_tags"] if l5x_enrichment_data else []
                 )
                 st.session_state["l5x_used"] = l5x_cx_file is not None
+
+                # Populate L5X Explorer tab data when L5X was used
+                if l5x_cx_file is not None and l5x_data is not None:
+                    md_content = generate_l5x_markdown(l5x_data)
+                    st.session_state["l5x_data"] = l5x_data
+                    st.session_state["l5x_md"] = md_content
+                    st.session_state["l5x_filename"] = l5x_cx_file.name
 
             except Exception as e:
                 st.error(f"Analysis failed: {e}")
@@ -698,7 +841,7 @@ with tab_crosscheck:
 
         # Downloads
         st.markdown("### Download Reports")
-        dl_col1, dl_col2, _ = st.columns([1, 1, 3])
+        dl_col1, dl_col2, dl_col3, _ = st.columns([1, 1, 1, 2])
         with dl_col1:
             st.download_button(
                 label="Download XLSX Report",
@@ -713,6 +856,14 @@ with tab_crosscheck:
                 data=st.session_state["html_bytes"],
                 file_name="io_crosscheck_report.html",
                 mime="text/html",
+                use_container_width=True,
+            )
+        with dl_col3:
+            st.download_button(
+                label="Download XLSM (Macros)",
+                data=st.session_state["xlsm_bytes"],
+                file_name="io_crosscheck_report.xlsm",
+                mime="application/vnd.ms-excel.sheet.macroEnabled.12",
                 use_container_width=True,
             )
 
@@ -752,22 +903,94 @@ with tab_crosscheck:
         # Display table with colored classification
         display_df = filtered_df.drop(columns=["Audit Trail"])
 
-        # Drop columns that are entirely empty in the current filtered view
-        empty_cols = [c for c in display_df.columns if display_df[c].astype(str).isin(["", "nan", "None"]).all()]
-        if empty_cols:
-            display_df = display_df.drop(columns=empty_cols)
+        # Note: columns are kept fixed regardless of filter to prevent layout shifts
 
-        st.markdown(df_to_html(display_df, max_height=500), unsafe_allow_html=True)
+        import streamlit.components.v1 as components
+        # Estimate height: header + rows (28px each) + border, capped at max_height
+        table_h = min(500, 44 + len(display_df) * 28 + 2)
+        components.html(df_to_html(display_df, max_height=500), height=table_h, scrolling=True)
+
+        # RSLogix search
+        if st.session_state.get("rslogix_enabled", False):
+            st.divider()
+            st.markdown("### Search in RSLogix")
+            # Build tag list from visible results for autocomplete
+            # Column names include source annotations; find by prefix
+            def _col(prefix: str) -> str:
+                return next((c for c in filtered_df.columns if c.startswith(prefix)), "")
+            tag_options = sorted(set(
+                t for t in filtered_df.get(_col("PLC Tag"), pd.Series()).tolist()
+                + filtered_df.get(_col("Device Tag"), pd.Series()).tolist()
+                + filtered_df.get(_col("IO Tag"), pd.Series()).tolist()
+                if t and str(t).strip() and str(t) != "nan"
+            ))
+
+            # Show result from previous search attempt
+            if "rslogix_result" in st.session_state:
+                r = st.session_state.pop("rslogix_result")
+                if r["success"]:
+                    st.success(r["message"])
+                else:
+                    st.error(r["message"])
+
+            with st.form("rslogix_form", clear_on_submit=False):
+                rs_col1, rs_col2 = st.columns([3, 1])
+                with rs_col1:
+                    search_tag = st.selectbox(
+                        "Tag to search",
+                        options=[""] + tag_options,
+                        index=0,
+                        key="rslogix_search_tag",
+                        placeholder="Select or type a tag name...",
+                        label_visibility="collapsed",
+                    )
+                with rs_col2:
+                    submitted = st.form_submit_button(
+                        "🔍 Search in RSLogix",
+                        use_container_width=True,
+                        type="primary",
+                    )
+                if submitted:
+                    if search_tag:
+                        from io_crosscheck.rslogix_bridge import search_in_rslogix
+                        result = search_in_rslogix(
+                            tag_name=search_tag,
+                            window_title=st.session_state.get("rslogix_window", "VMware Workstation"),
+                            delay_ms=st.session_state.get("rslogix_delay", 500),
+                        )
+                        st.session_state["rslogix_result"] = result
+                    else:
+                        st.session_state["rslogix_result"] = {
+                            "success": False, "message": "Select a tag name first.",
+                        }
 
         # Conflicts detail
         if conflict_count > 0:
             st.divider()
             st.markdown("### Conflicts Requiring Review")
             st.warning(f"{conflict_count} device(s) have address matches but different names. These require human review.")
-            conflict_df = df[df["Conflict"] == "YES"][
-                ["Device Tag", "IO Tag", "PLC Address", "PLC Description"]
+            # Column names include source annotations; find by prefix
+            def _dcol(prefix: str) -> str:
+                return next((c for c in df.columns if c.startswith(prefix)), "")
+            conflict_mask = df["Conflict"] == "YES"
+            conflict_src = df[conflict_mask].copy()
+            # Build a concise reason from the audit trail
+            audit_col = "Audit Trail"
+            if audit_col in conflict_src.columns:
+                def _extract_reason(trail: str) -> str:
+                    for part in reversed(trail.split(" | ")):
+                        p = part.strip()
+                        if any(kw in p.lower() for kw in ["spare but", "may be unused", "conflict", "no alias found", "rung cdata"]):
+                            return p
+                    return ""
+                conflict_src["Reason"] = conflict_src[audit_col].apply(_extract_reason)
+            else:
+                conflict_src["Reason"] = ""
+            conflict_df = conflict_src[
+                [_dcol("Device Tag"), _dcol("IO Tag"), _dcol("PLC Address"), _dcol("PLC Tag"), _dcol("PLC Description"), "Reason"]
             ]
-            st.markdown(df_to_html(conflict_df, max_height=400), unsafe_allow_html=True)
+            conflict_h = min(400, 44 + len(conflict_df) * 28 + 2)
+            components.html(df_to_html(conflict_df, max_height=400), height=conflict_h, scrolling=True)
 
         # -------------------------------------------------------------------
         # L5X-specific: Inter-Controller MSG Tags
@@ -838,6 +1061,10 @@ with tab_l5x:
                 Upload an RSLogix 5000 / Studio 5000 <strong>L5X project file</strong> to extract
                 every tag, module, alias, bit-level description, and structure member
                 into a downloadable Markdown report.
+            </p>
+            <p style="font-size: 0.9em; color: #64748b;">
+                <strong>Tip:</strong> If you include an L5X file in the IO Crosscheck analysis,
+                the extracted data will automatically appear here.
             </p>
         </div>
         """, unsafe_allow_html=True)

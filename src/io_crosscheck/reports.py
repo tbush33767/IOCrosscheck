@@ -17,6 +17,7 @@ _COLOR_MAP = {
     Classification.PLC_ONLY: "5B9BD5",       # blue
     Classification.CONFLICT: "FFC000",       # orange
     Classification.SPARE: "D9D9D9",          # grey
+    Classification.RACK_ONLY: "BF8F00",     # dark gold
 }
 
 
@@ -148,12 +149,210 @@ def generate_xlsx_report(
                 io.device_tag if io else "",
                 io.io_tag if io else "",
                 io.plc_address if io else "",
-                io.device_tag if io else "",
+                io.io_tag if io else "",
                 plc.description if plc else "",
                 " | ".join(r.audit_trail),
             ]
             for col_idx, val in enumerate(vals, start=1):
                 ws_conf.cell(row=row_idx, column=col_idx, value=val)
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(str(output_path))
+    return output_path
+
+
+# ---------------------------------------------------------------------------
+# XLSM Report (macro-enabled)
+# ---------------------------------------------------------------------------
+
+_TEMPLATE_PATH = Path(__file__).parent / "templates" / "crosscheck_template.xlsm"
+
+
+def generate_xlsm_report(
+    results: Sequence[MatchResult],
+    output_path: Path,
+    summary: dict | None = None,
+) -> Path:
+    """Write a macro-enabled verification report (.xlsm).
+
+    Loads the VBA template and populates data identically to the XLSX report,
+    plus a Version column (initialised to 0) and a Version Log sheet.
+
+    Returns the path to the written file.
+    """
+    import openpyxl
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+
+    wb = openpyxl.load_workbook(str(_TEMPLATE_PATH), keep_vba=True)
+
+    # ---- Verification Detail sheet ----
+    ws = wb["Verification Detail"]
+
+    headers = [
+        "Device Tag", "IO Tag", "Panel", "Rack", "Slot", "Channel",
+        "PLC Address", "Module Type", "Classification", "Strategy",
+        "Confidence", "PLC Tag Name", "PLC Description", "Conflict",
+        "Version",
+    ]
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin"),
+    )
+
+    for col_idx, h in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+        cell.border = thin_border
+
+    for row_idx, r in enumerate(results, start=2):
+        io = r.io_device
+        plc = r.plc_tag
+        values = [
+            io.device_tag if io else "",
+            io.io_tag if io else "",
+            io.panel if io else "",
+            io.rack if io else "",
+            io.slot if io else "",
+            io.channel if io else "",
+            io.plc_address if io else "",
+            io.module_type if io else "",
+            r.classification.value,
+            r.strategy_id if r.strategy_id else "",
+            r.confidence.value if r.strategy_id else "",
+            plc.name if plc else "",
+            plc.description if plc else "",
+            "YES" if r.conflict_flag else "",
+            "",  # Version — blank until first edit
+        ]
+        fill_color = _COLOR_MAP.get(r.classification)
+        row_fill = PatternFill(
+            start_color=fill_color, end_color=fill_color, fill_type="solid"
+        ) if fill_color else None
+
+        for col_idx, val in enumerate(values, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell.border = thin_border
+            if col_idx == 9 and row_fill:  # Classification column
+                cell.fill = row_fill
+                cell.font = Font(bold=True)
+
+    # Auto-filter on header row
+    from openpyxl.utils import get_column_letter
+    last_col_letter = get_column_letter(len(headers))
+    ws.auto_filter.ref = f"A1:{last_col_letter}1"
+
+    # Freeze header row
+    ws.freeze_panes = "A2"
+
+    # ---- Summary sheet ----
+    ws_sum = wb["Summary"]
+    ws_sum.cell(row=1, column=1, value="IO Crosscheck — Summary Report").font = Font(bold=True, size=14)
+
+    if summary is None:
+        summary = _build_summary(results)
+
+    row = 3
+    ws_sum.cell(row=row, column=1, value="Classification").font = Font(bold=True)
+    ws_sum.cell(row=row, column=2, value="Count").font = Font(bold=True)
+    ws_sum.cell(row=row, column=3, value="Percentage").font = Font(bold=True)
+    row += 1
+
+    total = summary.get("total", 0)
+    for cls_name, count in summary.get("by_classification", {}).items():
+        ws_sum.cell(row=row, column=1, value=cls_name)
+        ws_sum.cell(row=row, column=2, value=count)
+        pct = f"{count / total * 100:.1f}%" if total > 0 else "0%"
+        ws_sum.cell(row=row, column=3, value=pct)
+        row += 1
+
+    row += 1
+    ws_sum.cell(row=row, column=1, value="Total Devices").font = Font(bold=True)
+    ws_sum.cell(row=row, column=2, value=total)
+
+    row += 2
+    ws_sum.cell(row=row, column=1, value="Conflicts Requiring Review").font = Font(bold=True)
+    ws_sum.cell(row=row, column=2, value=summary.get("conflicts", 0))
+
+    # Hide CopyEnabled control columns
+    ws_sum.column_dimensions['E'].hidden = True
+    ws_sum.column_dimensions['F'].hidden = True
+
+    # ---- Conflicts sheet ----
+    ws_conf = wb["Conflicts"]
+    conf_headers = [
+        "Device Tag", "IO Tag", "PLC Address", "IO Description",
+        "PLC Description",
+    ]
+    for col_idx, h in enumerate(conf_headers, start=1):
+        cell = ws_conf.cell(row=1, column=col_idx, value=h)
+        cell.font = header_font
+        cell.fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+
+    conflicts = [r for r in results if r.conflict_flag]
+    for row_idx, r in enumerate(conflicts, start=2):
+        io = r.io_device
+        plc = r.plc_tag
+        vals = [
+            io.device_tag if io else "",
+            io.io_tag if io else "",
+            io.plc_address if io else "",
+            io.io_tag if io else "",
+            plc.description if plc else "",
+        ]
+        for col_idx, val in enumerate(vals, start=1):
+            ws_conf.cell(row=row_idx, column=col_idx, value=val)
+
+    # Freeze header row on Conflicts
+    ws_conf.freeze_panes = "A2"
+
+    # ---- Audit Trail sheet ----
+    ws_audit = wb.create_sheet("Audit Trail")
+    audit_headers = ["Row", "Device Tag", "IO Tag", "Classification", "Audit Trail"]
+    for col_idx, h in enumerate(audit_headers, start=1):
+        cell = ws_audit.cell(row=1, column=col_idx, value=h)
+        cell.font = header_font
+        cell.fill = PatternFill(start_color="7B68EE", end_color="7B68EE", fill_type="solid")
+        cell.border = thin_border
+
+    for row_idx, r in enumerate(results, start=2):
+        io = r.io_device
+        ws_audit.cell(row=row_idx, column=1, value=row_idx).border = thin_border
+        ws_audit.cell(row=row_idx, column=2, value=io.device_tag if io else "").border = thin_border
+        ws_audit.cell(row=row_idx, column=3, value=io.io_tag if io else "").border = thin_border
+        ws_audit.cell(row=row_idx, column=4, value=r.classification.value).border = thin_border
+        ws_audit.cell(row=row_idx, column=5, value=" | ".join(r.audit_trail)).border = thin_border
+
+    # Auto-filter and freeze on Audit Trail
+    audit_last_col = get_column_letter(len(audit_headers))
+    ws_audit.auto_filter.ref = f"A1:{audit_last_col}1"
+    ws_audit.freeze_panes = "A2"
+
+    # ---- Version Log sheet (headers already in template) ----
+    # No data rows yet — VBA populates this as edits happen.
+
+    # ---- Auto-size all columns in every sheet ----
+    for sheet in wb.worksheets:
+        for col in sheet.columns:
+            max_len = 0
+            col_letter = col[0].column_letter
+            for cell in col:
+                if cell.value:
+                    max_len = max(max_len, len(str(cell.value)))
+            sheet.column_dimensions[col_letter].width = min(max_len + 2, 50)
+
+    # ---- Reorder sheets ----
+    desired_order = ["Verification Detail", "Conflicts", "Summary", "Audit Trail", "Version Log"]
+    for target_idx, name in enumerate(desired_order):
+        for current_idx, sheet in enumerate(wb.worksheets):
+            if sheet.title == name:
+                if current_idx != target_idx:
+                    wb.move_sheet(sheet, offset=target_idx - current_idx)
+                break
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -192,6 +391,8 @@ _HTML_TEMPLATE = """\
   .cls-PLC-Only {{ background-color: #d1ecf1 !important; }}
   .cls-Conflict {{ background-color: #ffeaa7 !important; }}
   .cls-Spare {{ background-color: #e9ecef !important; }}
+  .cls-Rack-Only {{ background-color: #fef3c7 !important; }}
+  .rack-only {{ color: #b8860b; }}
 </style>
 </head>
 <body>
@@ -204,6 +405,7 @@ _HTML_TEMPLATE = """\
   <div class="card"><div class="count plc-only">{plc_only}</div><div class="label">PLC Only</div></div>
   <div class="card"><div class="count conflict">{conflicts}</div><div class="label">Conflicts</div></div>
   <div class="card"><div class="count spare">{spares}</div><div class="label">Spares</div></div>
+  <div class="card"><div class="count rack-only">{rack_only}</div><div class="label">Rack Only</div></div>
 </div>
 
 <table id="results" class="display compact">
@@ -278,6 +480,7 @@ def generate_html_report(
         plc_only=by_cls.get(Classification.PLC_ONLY.value, 0),
         conflicts=summary["conflicts"],
         spares=by_cls.get(Classification.SPARE.value, 0),
+        rack_only=by_cls.get(Classification.RACK_ONLY.value, 0),
         rows="\n".join(rows_html),
     )
 

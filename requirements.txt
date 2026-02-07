@@ -1,0 +1,8 @@
+streamlit
+pandas
+openpyxl
+pyautogui
+pyperclip
+pygetwindow
+pywin32
+pytest
