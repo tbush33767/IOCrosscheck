@@ -100,11 +100,18 @@ st.markdown("""
 
     /* Custom HTML results table */
     .cx-table-wrap { border: 1px solid #cbd5e1; border-radius: 12px; overflow: auto; }
-    .cx-table { width: 100%; border-collapse: collapse; font-size: 0.85em; table-layout: fixed; }
-    .cx-table th { position: sticky; top: 0; background: #f1f5f9; text-align: left; padding: 8px 10px; border-bottom: 2px solid #cbd5e1; white-space: nowrap; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
-    .cx-table td { padding: 6px 10px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cx-table { width: 100%; border-collapse: collapse; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; table-layout: fixed; }
+    .cx-table th { position: sticky; top: 0; background: #f1f5f9; text-align: left; padding: 8px 10px; border-bottom: 2px solid #cbd5e1; white-space: nowrap; z-index: 1; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+    .cx-table td { padding: 6px 10px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; font-size: 13px; line-height: 1.5; }
+    .cx-table td * { font-size: 13px !important; font-weight: normal !important; margin: 0 !important; padding: 0 !important; line-height: 1.5 !important; }
+    .cx-table td h1, .cx-table td h2, .cx-table td h3, .cx-table td h4, .cx-table td h5, .cx-table td h6,
+    .cx-table td p, .cx-table td span, .cx-table td div { font-size: 13px !important; font-weight: normal !important; display: inline !important; }
+    .cx-table td:nth-child(2) { white-space: pre-wrap; word-break: break-all; }
+    .cx-table td:nth-child(3) { white-space: pre-wrap; word-break: break-word; }
     .cx-table tr:nth-child(even) { background: rgba(68, 114, 196, 0.04); }
     .cx-table tr:hover { background: rgba(68, 114, 196, 0.08); }
+    .cx-table mark { background-color: #fde68a; color: #1e293b; padding: 1px 2px; border-radius: 3px; font-size: inherit; }
+    .cx-table code { font-size: 13px; font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace; background: transparent; color: inherit; word-break: break-all; white-space: pre-wrap; }
 
     /* Getting-started card — matches file uploader dropzone */
     .getting-started {
@@ -903,12 +910,15 @@ with tab_crosscheck:
         # Display table with colored classification
         display_df = filtered_df.drop(columns=["Audit Trail"])
 
-        # Note: columns are kept fixed regardless of filter to prevent layout shifts
-
-        import streamlit.components.v1 as components
-        # Estimate height: header + rows (28px each) + border, capped at max_height
-        table_h = min(500, 44 + len(display_df) * 28 + 2)
-        components.html(df_to_html(display_df, max_height=500), height=table_h, scrolling=True)
+        st.dataframe(
+            display_df.style.map(
+                color_classification,
+                subset=["Classification"],
+            ),
+            use_container_width=True,
+            height=500,
+            hide_index=True,
+        )
 
         # RSLogix search
         if st.session_state.get("rslogix_enabled", False):
@@ -989,8 +999,7 @@ with tab_crosscheck:
             conflict_df = conflict_src[
                 [_dcol("Device Tag"), _dcol("IO Tag"), _dcol("PLC Address"), _dcol("PLC Tag"), _dcol("PLC Description"), "Reason"]
             ]
-            conflict_h = min(400, 44 + len(conflict_df) * 28 + 2)
-            components.html(df_to_html(conflict_df, max_height=400), height=conflict_h, scrolling=True)
+            st.dataframe(conflict_df, use_container_width=True, height=400, hide_index=True)
 
         # -------------------------------------------------------------------
         # L5X-specific: Inter-Controller MSG Tags
@@ -1354,3 +1363,76 @@ with tab_l5x:
 
                         if not tags.get("alias_tags") and not tags.get("regular_tags"):
                             st.info("No tags in this program.")
+
+        # --- Programs & Routines (Rung Data) ---
+        total_routines = sum(len(p.get("routines", [])) for p in programs)
+        total_rungs = sum(
+            len(r.get("rungs", []))
+            for p in programs for r in p.get("routines", [])
+        )
+        with st.expander(f"Programs & Routines — Rung Data ({total_routines} routines, {total_rungs} rungs)"):
+            if not programs:
+                st.info("No programs found.")
+            else:
+                for prog in programs:
+                    prog_name = prog.get("name", "Unknown")
+                    routines = prog.get("routines", [])
+                    if not routines:
+                        continue
+                    st.markdown(f"#### Program: `{prog_name}`")
+                    rung_search = st.text_input(
+                        "Search rungs",
+                        placeholder="Filter by rung #, text, or comment...",
+                        key=f"rung_search_{prog_name}",
+                        label_visibility="collapsed",
+                    )
+                    for routine in routines:
+                        routine_name = routine.get("name", "Unknown")
+                        routine_type = routine.get("type", "")
+                        rungs = routine.get("rungs", [])
+                        type_label = f" ({routine_type})" if routine_type else ""
+
+                        # Apply search filter
+                        if rung_search:
+                            q = rung_search.lower()
+                            rungs = [
+                                r for r in rungs
+                                if q in str(r.get("number", "")).lower()
+                                or q in r.get("text", "").lower()
+                                or q in r.get("comment", "").lower()
+                            ]
+
+                        rung_count_label = f"{len(rungs)} rungs" if not rung_search else f"{len(rungs)} matches"
+                        with st.expander(f"Routine: {routine_name}{type_label} — {rung_count_label}"):
+                            if not rungs:
+                                st.info("No rungs match your search." if rung_search else "No rungs in this routine (may be a non-ladder routine).")
+                            else:
+                                def _highlight(text: str, query: str) -> str:
+                                    """Wrap all case-insensitive occurrences of query in <mark> tags."""
+                                    import html as _html
+                                    escaped = _html.escape(text).replace("\n", "<br>")
+                                    if not query:
+                                        return escaped
+                                    import re as _re
+                                    pattern = _re.compile(_re.escape(_html.escape(query)), _re.IGNORECASE)
+                                    return pattern.sub(lambda m: f"<mark>{m.group()}</mark>", escaped)
+
+                                q_hl = rung_search.strip() if rung_search else ""
+                                rows_html = []
+                                for rung in rungs:
+                                    num = str(rung.get("number", ""))
+                                    txt = rung.get("text", "")
+                                    cmt = rung.get("comment", "")
+                                    rows_html.append(
+                                        f"<tr><td>{_highlight(num, q_hl)}</td>"
+                                        f"<td><code>{_highlight(txt, q_hl)}</code></td>"
+                                        f"<td>{_highlight(cmt, q_hl)}</td></tr>"
+                                    )
+                                table_html = (
+                                    f'<div class="cx-table-wrap" style="max-height:600px;overflow:auto;">'
+                                    f'<table class="cx-table">'
+                                    f'<tr><th style="width:70px;">Rung #</th><th>Neutral Text</th><th>Comment</th></tr>'
+                                    f'{"".join(rows_html)}'
+                                    f'</table></div>'
+                                )
+                                st.markdown(table_html, unsafe_allow_html=True)

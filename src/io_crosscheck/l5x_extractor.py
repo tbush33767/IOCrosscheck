@@ -331,18 +331,94 @@ def _extract_programs(project: l5x.Project) -> list[dict[str, Any]]:
     except Exception:
         return programs
 
+    # Build a lookup of routines from raw XML for rung extraction
+    routine_map = _build_routine_map(project)
+
     for prog_name in prog_names:
         try:
             program = project.programs[prog_name]
             tags_data = _extract_scope_tags(program.tags)
+            routines = routine_map.get(prog_name, [])
             programs.append({
                 "name": prog_name,
                 "tags": tags_data,
+                "routines": routines,
             })
         except Exception:
-            programs.append({"name": prog_name, "tags": {"alias_tags": [], "regular_tags": []}, "error": "Could not read"})
+            programs.append({
+                "name": prog_name,
+                "tags": {"alias_tags": [], "regular_tags": []},
+                "routines": routine_map.get(prog_name, []),
+                "error": "Could not read",
+            })
 
     return programs
+
+
+def _build_routine_map(project: l5x.Project) -> dict[str, list[dict[str, Any]]]:
+    """Walk raw XML to extract routines and their rungs for each program.
+
+    Returns a dict mapping program name -> list of routine dicts.
+    Each routine dict has: name, type, rungs (list of rung dicts).
+    Each rung dict has: number, text, comment.
+    """
+    routine_map: dict[str, list[dict[str, Any]]] = {}
+    try:
+        root = project.doc
+    except Exception:
+        return routine_map
+
+    for prog_elem in root.iter("Program"):
+        prog_name = prog_elem.get("Name", "")
+        if not prog_name:
+            continue
+        routines: list[dict[str, Any]] = []
+        routines_elem = prog_elem.find("Routines")
+        if routines_elem is None:
+            continue
+        for routine_elem in routines_elem.findall("Routine"):
+            routine_name = routine_elem.get("Name", "")
+            routine_type = routine_elem.get("Type", "")
+            rungs: list[dict[str, Any]] = []
+
+            # Ladder logic routines have RLLContent
+            rll = routine_elem.find("RLLContent")
+            if rll is not None:
+                for rung_elem in rll.findall("Rung"):
+                    rung_data = _extract_rung(rung_elem)
+                    rungs.append(rung_data)
+
+            routines.append({
+                "name": routine_name,
+                "type": routine_type,
+                "rungs": rungs,
+            })
+        routine_map[prog_name] = routines
+
+    return routine_map
+
+
+def _extract_rung(rung_elem) -> dict[str, Any]:
+    """Extract rung number, neutral text, and comment from a <Rung> XML element."""
+    number = rung_elem.get("Number", "")
+
+    # Comment — may be a direct child <Comment> with CDATA
+    comment = ""
+    comment_elem = rung_elem.find("Comment")
+    if comment_elem is not None:
+        comment = "".join(comment_elem.itertext()).strip()
+
+    # Neutral text — inside <Text> child
+    text = ""
+    text_elem = rung_elem.find("Text")
+    if text_elem is not None:
+        text = "".join(text_elem.itertext()).strip()
+
+    return {
+        "number": number,
+        "text": text,
+        "comment": comment,
+    }
 
 
 # ---------------------------------------------------------------------------
